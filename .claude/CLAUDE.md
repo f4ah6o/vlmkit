@@ -142,8 +142,8 @@ it work, not to re-learn:
 
 **Whether zoom makes answers right is a separate bench** — `vlm-bench --zoom` only prints latency,
 tokens and cost. The accuracy bench plants one change with a known answer in a full-page 2x capture of
-each CSS-challenge fixture (a digit in ≤14px text, a short label's colour, an element nudged 3-4px, or
-nothing) and asks each model twice through the same driver, images and wording: `runSingleLook` (one
+each CSS-challenge fixture (a digit in ≤13px text, a short label's colour set to a seeded hue, an element
+moved 1-6px and scored exactly, or nothing — only on elements topmost at their centre, `--variants N` per kind) and asks each model twice through the same driver, images and wording: `runSingleLook` (one
 turn, no tool) and `runZoomLoop`. Answers are JSON, scored without reading prose; the report pairs the
 two arms per case (fixed / broken by zoom) with an exact sign test, because 36 cases cannot carry a bare
 accuracy difference.
@@ -156,13 +156,33 @@ $B --rescore --md report.md                       # re-score saved answers (test
 $B --max-edge 1024 …                              # a harsher view budget, as a provider that resizes again would
 ```
 
+**No API key: the agent's own vision is the model.** Do not stop at "no key" — export a packet per
+arm, hand each to a fresh subagent that is given only the packet's `BRIEF.md`, and import what it writes:
+
+```bash
+$B --export-agent /tmp/p-single --arm single          # builds the cases; tasks under shuffled ids, images at the budget size
+$B --export-agent /tmp/p-zoom --arm zoom --reuse      # same tasks; BRIEF.md adds the zoom helper (--agent-zoom), same budget as the loop
+$B --import-agent /tmp/p-zoom/answers.json --arm zoom --model agent --md report.md
+```
+
+The packet is blind by construction and a test holds it there: no case id, fixture name or path to
+`cases.json` appears in any file or file name in it — an id like `page-text` is the answer. Give each
+arm to a different agent (one that has zoomed remembers the crops), and say in the report that the
+arms were an agent's: it has a shell and its honesty is the one thing the packet cannot enforce.
+
 Two things measured building it: the first full-page capture of `page.html` is 2 device px shorter than
 every later one, so captures repeat until two agree (without it every `none` case differs everywhere);
 and at the default budget a 2x capture is shown at ~0.8 CSS scale, where 12px text is still legible to a
 careful eye — so a small single-look/zoom gap on `text` is a finding, not a broken bench.
 
-Not yet run against a live model: the sandbox this was written in had no provider key. Run the accuracy
-bench before turning zoom on anywhere by default.
+**Measured with the coding agent's own vision**, twice. v1 (`docs/reports/2026-09-28-zoom-accuracy-agent-v1.md`)
+tied at 35/36 — the bench was too easy: a nameable Tailwind colour, four guessable shifts with ±1px, a case
+under a blurred modal nobody could read. v2 (`…-agent-v2.md`) fixed those (seeded hues, 1-6px shifts scored
+exactly, unobstructed targets, `--variants 2`) and at the default budget **zoom scored 58/58 against the single
+look's 48/58: 10 fixed, 0 broken, p = 0.002**. The whole gain is exact values — shift magnitudes (10/17 →
+17/17) and colours (15/18 → 18/18); detection, ≤13px digits and "nothing changed" were perfect either way.
+Cost ~1.4x tokens, ~3x time. So: turn zoom on when the answer is a measurement, not to notice a change.
+No provider model has run it yet.
 
 ## Component-focused VRT (fixing one component with a small image)
 
