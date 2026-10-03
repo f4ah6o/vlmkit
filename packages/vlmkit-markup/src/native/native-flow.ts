@@ -172,8 +172,8 @@ function nativeActionLabel(action: FlowAction): string {
 }
 
 export async function runNativeFlowVerify(options: FlowVerifyOptions): Promise<FlowVerifyReport> {
-  if (options.storageState || options.har) {
-    throw new UsageError("Native flow does not accept browser storage-state or HAR options.");
+  if (options.storageState || options.har || options.waitUntil) {
+    throw new UsageError("Native flow does not accept browser storage-state/HAR/wait-until options.");
   }
   const artifactDir = resolve(options.artifactDir ?? ".vlmkit/native-flow");
   await mkdir(artifactDir, { recursive: true });
