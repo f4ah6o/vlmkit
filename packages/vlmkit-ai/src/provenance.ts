@@ -108,7 +108,7 @@ export function assertExternalAiMessageAllowed(
   for (const part of content) {
     if (part.type === "image") {
       assertExternalAiAllowed(part, "image");
-    } else if (part.provenance !== undefined) {
+    } else {
       assertExternalAiAllowed(part, "text");
     }
   }
