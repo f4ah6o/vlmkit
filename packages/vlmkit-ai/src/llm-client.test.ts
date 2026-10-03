@@ -42,6 +42,24 @@ describe("unified LLM external-AI provenance gate", () => {
     assert.equal(calls, 0);
   });
 
+  it("rejects unclassified structured text before transport", async () => {
+    const client = createUnifiedLLMClient({ provider: "openrouter", model: "vendor/model" })!;
+    await assert.rejects(
+      () => client.completeWithImages([{ type: "text", text: "POISON_DO_NOT_EGRESS" }]),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls, 0);
+  });
+
+  it("rejects analyzeDiff textReport without provenance before transport", async () => {
+    const client = createUnifiedLLMClient({ provider: "openrouter", model: "vendor/model" })!;
+    await assert.rejects(
+      () => client.analyzeDiff({ textReport: "POISON_DO_NOT_EGRESS" }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls, 0);
+  });
+
   it("rejects an unclassified image before transport", async () => {
     const client = createUnifiedLLMClient({ provider: "openrouter", model: "vendor/model" })!;
     await assert.rejects(
@@ -54,10 +72,23 @@ describe("unified LLM external-AI provenance gate", () => {
   it("allows app-owned image content", async () => {
     const client = createUnifiedLLMClient({ provider: "openrouter", model: "vendor/model" })!;
     const result = await client.completeWithImages([
-      { type: "text", text: "Inspect this fixture." },
+      { type: "text", text: "Inspect this fixture.", provenance: "app_owned" },
       { type: "image", base64: "SAFE_FIXTURE", provenance: "app_owned" },
     ]);
     assert.equal(result.content, "ok");
     assert.equal(calls, 1);
+  });
+
+  it("allows fixed bare-string text and explicitly app-owned diff text", async () => {
+    const client = createUnifiedLLMClient({ provider: "openrouter", model: "vendor/model" })!;
+    const fixed = await client.completeWithImages("Fixed caller-owned prompt");
+    assert.equal(fixed.content, "ok");
+
+    const diff = await client.analyzeDiff({
+      textReport: "SAFE_REPORT",
+      textReportProvenance: "app_owned",
+    });
+    assert.equal(diff.content, "ok");
+    assert.equal(calls, 2);
   });
 });
