@@ -35,6 +35,13 @@ import { BOLD, CYAN, DIM, GREEN, RED, RESET } from "@mizchi/vlmkit-core/terminal
 import type { RuleView } from "@mizchi/vlmkit-core/plugin/contract.ts";
 import { ruleTier } from "@mizchi/vlmkit-core/plugin/rule-tier.ts";
 import { withBrowser } from "@mizchi/vlmkit-core/browser-launch.ts";
+import type { NativeSurfaceLocator } from "../a11y-tree/native-agent.ts";
+
+export type FlowLocator = Exclude<NativeSurfaceLocator, { by: "point" }>;
+
+type SelectorOrLocator =
+  | { selector: string; locator?: never }
+  | { locator: FlowLocator; selector?: never };
 
 export type FlowAction =
   /**
@@ -46,21 +53,21 @@ export type FlowAction =
    * which passes the assert while lying to assistive tech. Force lets the
    * flow author click through the disabled state instead.
    */
-  | { action: "click"; selector: string; force?: boolean }
-  | { action: "press"; selector?: string; key: string }
-  | { action: "fill"; selector: string; value: string }
-  | { action: "type"; selector: string; text: string }
-  | { action: "focus"; selector: string }
-  | { action: "hover"; selector: string }
+  | ({ action: "click"; force?: boolean } & SelectorOrLocator)
+  | ({ action: "press"; key: string } & ({ selector?: string; locator?: FlowLocator }))
+  | ({ action: "fill"; value: string } & SelectorOrLocator)
+  | ({ action: "type"; text: string } & SelectorOrLocator)
+  | ({ action: "focus" } & SelectorOrLocator)
+  | ({ action: "hover" } & SelectorOrLocator)
   | { action: "wait"; ms: number };
 
 export type FlowAssert =
-  | { assert: "attr"; selector: string; name: string; equals: string | null }
-  | { assert: "visible"; selector: string }
-  | { assert: "hidden"; selector: string }
-  | { assert: "focused"; selector: string }
-  | { assert: "text"; selector: string; contains: string }
-  | { assert: "count"; selector: string; equals: number };
+  | ({ assert: "attr"; name: string; equals: string | null } & SelectorOrLocator)
+  | ({ assert: "visible" } & SelectorOrLocator)
+  | ({ assert: "hidden" } & SelectorOrLocator)
+  | ({ assert: "focused" } & SelectorOrLocator)
+  | ({ assert: "text"; contains: string } & SelectorOrLocator)
+  | ({ assert: "count"; equals: number } & SelectorOrLocator);
 
 export interface FlowStep {
   /** Optional human label for the step. */
@@ -82,6 +89,8 @@ export interface StepResult {
   actionError?: string;
   assertions: { assert: FlowAssert; passed: boolean; actual: string }[];
   passed: boolean;
+  /** Native runs persist the exact semantic tree and screenshot after this step. */
+  evidence?: { screenshotPath: string; treePath: string; actionPath?: string };
 }
 
 export interface FlowVerifyReport {
@@ -90,6 +99,7 @@ export interface FlowVerifyReport {
   passed: number;
   total: number;
   done: boolean;
+  artifactDir?: string;
   /**
    * Set when the URL redirected — almost always a login wall. A flow driven
    * against a sign-in page fails on "element not found" for every step, which
@@ -145,26 +155,35 @@ export function validateFlow(flow: Flow): void {
   });
 }
 
+function flowTarget(value: { selector?: string; locator?: FlowLocator }): string {
+  if (value.selector) return value.selector;
+  if (value.locator) return JSON.stringify(value.locator);
+  return "(focused target)";
+}
+
 function describeAction(a: FlowAction): string {
   switch (a.action) {
     case "click":
-      return `click ${a.selector}${a.force ? " (force)" : ""}`;
+      return `click ${flowTarget(a)}${a.force ? " (force)" : ""}`;
     case "press":
-      return `press ${a.key}${a.selector ? ` on ${a.selector}` : ""}`;
+      return `press ${a.key}${a.selector || a.locator ? ` on ${flowTarget(a)}` : ""}`;
     case "fill":
-      return `fill ${a.selector}`;
+      return `fill ${flowTarget(a)}`;
     case "type":
-      return `type into ${a.selector}`;
+      return `type into ${flowTarget(a)}`;
     case "focus":
-      return `focus ${a.selector}`;
+      return `focus ${flowTarget(a)}`;
     case "hover":
-      return `hover ${a.selector}`;
+      return `hover ${flowTarget(a)}`;
     case "wait":
       return `wait ${a.ms}ms`;
   }
 }
 
 async function runAction(page: Page, a: FlowAction): Promise<void> {
+  if ("locator" in a && a.locator) {
+    throw new UsageError("Native flow locators require a macos: source; browser flows use selector.");
+  }
   switch (a.action) {
     case "click":
       await page.click(a.selector, { timeout: 5000, ...(a.force ? { force: true } : {}) });
@@ -193,6 +212,9 @@ async function runAction(page: Page, a: FlowAction): Promise<void> {
 
 /** Evaluate one assertion in-page; returns [passed, actual]. */
 function evalAssertion(spec: FlowAssert): (s: FlowAssert) => [boolean, string] {
+  if ("locator" in spec && spec.locator) {
+    throw new UsageError("Native flow locators require a macos: source; browser flows use selector.");
+  }
   // Returned as a real function so page.evaluate(fn, spec) passes the
   // argument (a string body would be treated as an expression and never
   // receive spec). `spec` is threaded for closure-free serialization.
@@ -248,10 +270,20 @@ export interface FlowVerifyOptions extends PageLoadOptions {
   storageState?: string;
   source: string;
   flow: Flow;
+  nativeAgent?: string;
+  launch?: boolean;
+  window?: string;
+  maxDepth?: number;
+  maxNodes?: number;
+  artifactDir?: string;
 }
 
 export async function runFlowVerify(options: FlowVerifyOptions): Promise<FlowVerifyReport> {
   validateFlow(options.flow);
+  if (options.source.startsWith("macos:")) {
+    const { runNativeFlowVerify } = await import("../native/native-flow.ts");
+    return runNativeFlowVerify(options);
+  }
   const steps: StepResult[] = [];
   let redirected: string | undefined;
   await withBrowser(async (browser) => {
