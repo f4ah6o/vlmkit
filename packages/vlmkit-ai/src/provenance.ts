@@ -1,8 +1,8 @@
 import { PNG } from "pngjs";
+import type { ContentProvenance, ContentSource } from "@mizchi/vlmkit-core/content-provenance.ts";
 import { VrtConfigError } from "./errors.ts";
 
-export type ContentProvenance = "app_owned" | "restricted_content" | "unclassified" | "sanitized";
-export type ContentSource = "capture" | "file" | "generated" | "sanitized";
+export type { ContentProvenance, ContentSource } from "@mizchi/vlmkit-core/content-provenance.ts";
 
 export interface VlmImageInput {
   /**

@@ -11,7 +11,12 @@
 import type { LLMProvider } from "./intent.ts";
 import { VrtConfigError } from "./errors.ts";
 import { readEnv } from "@mizchi/vlmkit-core/project-config.ts";
-import { assertExternalAiMessageAllowed, type ContentProvenance } from "./provenance.ts";
+import {
+  assertExternalAiAllowed,
+  assertExternalAiMessageAllowed,
+  type ContentProvenance,
+  type VlmTextInput,
+} from "./provenance.ts";
 
 // ---- Types ----
 
@@ -59,8 +64,11 @@ export interface LLMResponse {
 }
 
 export interface UnifiedLLMClient {
-  /** Text only (backwards-compatible) */
-  complete(prompt: string): Promise<string>;
+  /**
+   * Text only. A bare string is treated as caller-authored prompt text for backwards compatibility.
+   * Derived/OCR text can carry provenance with VlmTextInput and is fail-closed when restricted.
+   */
+  complete(prompt: string | VlmTextInput): Promise<string>;
   /** Text + images */
   completeWithImages(content: MessageContent, options?: { maxTokens?: number }): Promise<LLMResponse>;
   /** VRT diff analysis: pass heatmap + text report together */
@@ -151,7 +159,7 @@ function createAnthropicClient(apiKey: string, model?: string): UnifiedLLMClient
     provider: "anthropic",
     model: modelId,
     async complete(prompt) {
-      return (await call(prompt, 1024)).content;
+      return (await call(typeof prompt === "string" ? prompt : prompt.text, 1024)).content;
     },
     async completeWithImages(content, options) {
       return call(content, options?.maxTokens ?? 1024);
@@ -207,7 +215,7 @@ function createGeminiLLMClient(apiKey: string, model?: string): UnifiedLLMClient
     provider: "gemini",
     model: modelId,
     async complete(prompt) {
-      return (await call(prompt, 1024)).content;
+      return (await call(typeof prompt === "string" ? prompt : prompt.text, 1024)).content;
     },
     async completeWithImages(content, options) {
       return call(content, options?.maxTokens ?? 1024);
@@ -273,7 +281,7 @@ function createOpenRouterLLMClient(apiKey: string, model?: string): UnifiedLLMCl
     provider: "openrouter",
     model: modelId,
     async complete(prompt) {
-      return (await call(prompt, 1024)).content;
+      return (await call(typeof prompt === "string" ? prompt : prompt.text, 1024)).content;
     },
     async completeWithImages(content, options) {
       return call(content, options?.maxTokens ?? 1024);
@@ -324,6 +332,12 @@ function buildDiffContent(options: {
 function guardUnifiedClient(client: UnifiedLLMClient): UnifiedLLMClient {
   return {
     ...client,
+    async complete(prompt) {
+      if (typeof prompt !== "string") {
+        assertExternalAiAllowed(prompt, "text", "LLM text");
+      }
+      return client.complete(typeof prompt === "string" ? prompt : prompt.text);
+    },
     async completeWithImages(content, options) {
       assertExternalAiMessageAllowed(content);
       return client.completeWithImages(content, options);
