@@ -25,7 +25,7 @@ import {
   runMarkupVerify,
 } from "../verify/markup-verify.ts";
 import { type Flow, type FlowVerifyReport, formatFlowReport, runFlowVerify } from "../inspect/flow-verify.ts";
-import { firstPositional } from "@mizchi/vlmkit-core/plugin/args.ts";
+import { firstPositional, optionalInt } from "@mizchi/vlmkit-core/plugin/args.ts";
 
 export const verifyMarkupGate = defineGate<MarkupVerifyReport, MarkupVerifyOptions>({
   id: "verify.markup",
@@ -161,6 +161,12 @@ export interface FlowGateOptions extends PageLoadOptions {
   source: string;
   flowPath: string;
   storageState?: string;
+  nativeAgent?: string;
+  launch?: boolean;
+  window?: string;
+  maxDepth?: number;
+  maxNodes?: number;
+  artifactDir?: string;
 }
 
 export const verifyFlowGate = defineGate<FlowVerifyReport, FlowGateOptions>({
@@ -211,16 +217,63 @@ flow.json: { "viewport"?, "steps": [ { "label"?, "do": <action>, "expect": [<ass
       kind: "path",
       description: "Playwright storage state for pages behind a login",
     },
+    { name: "native-agent", placeholder: "path", kind: "path", description: "macOS native agent executable" },
+    { name: "launch", kind: "boolean", description: "Launch a macOS target when needed" },
+    { name: "window", placeholder: "selector", kind: "string", description: "macOS window: main|focused|index=N|window id" },
+    { name: "max-depth", placeholder: "n", kind: "number", description: "Native AX traversal depth" },
+    { name: "max-nodes", placeholder: "n", kind: "number", description: "Native AX traversal node cap" },
+    { name: "artifacts", placeholder: "dir", kind: "path", description: "Native per-step tree/screenshot evidence directory" },
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
-    const source = firstPositional(argv, "vlmkit verify flow <html-or-url> --flow <flow.json>", ["--flow"]);
+    const source = firstPositional(argv, "vlmkit verify flow <html-or-url|macos:target> --flow <flow.json>", [
+      "--flow",
+      "--storage-state",
+      "--native-agent",
+      "--window",
+      "--max-depth",
+      "--max-nodes",
+      "--artifacts",
+    ]);
     const flowPath = readFlag(argv, "flow");
     if (!flowPath) throw new UsageError("--flow <flow.json> is required");
     const storageState = readFlag(argv, "storage-state");
-    return { source, flowPath, ...(storageState ? { storageState } : {}), ...parsePageLoad(argv) };
+    const nativeAgent = readFlag(argv, "native-agent");
+    const window = readFlag(argv, "window");
+    const maxDepth = optionalInt(argv, "max-depth", { min: 1 });
+    const maxNodes = optionalInt(argv, "max-nodes", { min: 1 });
+    const artifactDir = readFlag(argv, "artifacts");
+    const launch = argv.includes("--launch");
+    const native = source.startsWith("macos:");
+    if (!native && (nativeAgent || window || maxDepth || maxNodes || artifactDir || launch)) {
+      throw new UsageError("--native-agent/--launch/--window/--max-depth/--max-nodes/--artifacts require a macos: source.");
+    }
+    if (native && storageState) throw new UsageError("--storage-state is browser-only and is not available for macos: flows.");
+    return {
+      source,
+      flowPath,
+      ...(storageState ? { storageState } : {}),
+      ...(nativeAgent ? { nativeAgent } : {}),
+      ...(window ? { window } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(maxNodes !== undefined ? { maxNodes } : {}),
+      ...(artifactDir ? { artifactDir } : {}),
+      ...(launch ? { launch: true } : {}),
+      ...parsePageLoad(argv),
+    };
   },
-  run: async ({ source, flowPath, storageState, ...pageLoad }) => {
+  run: async ({
+    source,
+    flowPath,
+    storageState,
+    nativeAgent,
+    launch,
+    window,
+    maxDepth,
+    maxNodes,
+    artifactDir,
+    ...pageLoad
+  }) => {
     let flow: Flow;
     try {
       flow = JSON.parse(await readFile(flowPath, "utf8")) as Flow;
@@ -231,7 +284,18 @@ flow.json: { "viewport"?, "steps": [ { "label"?, "do": <action>, "expect": [<ass
     if (!Array.isArray(flow?.steps) || flow.steps.length === 0) {
       throw new UsageError(`--flow ${flowPath}: "steps" must be a non-empty array`);
     }
-    return runFlowVerify({ source, flow, ...(storageState ? { storageState } : {}), ...pageLoad });
+    return runFlowVerify({
+      source,
+      flow,
+      ...(storageState ? { storageState } : {}),
+      ...(nativeAgent ? { nativeAgent } : {}),
+      ...(launch ? { launch: true } : {}),
+      ...(window ? { window } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(maxNodes !== undefined ? { maxNodes } : {}),
+      ...(artifactDir ? { artifactDir } : {}),
+      ...pageLoad,
+    });
   },
   findings: (report): Finding[] => {
     const findings: Finding[] = [];
