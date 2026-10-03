@@ -8,13 +8,40 @@ import {
   nativeNodeMatchesLocator,
   nativeNodesForLocator,
   nativeSelectorForNode,
+  nativeGroundingSample,
 } from "./native-surface.ts";
+import type { NativeInteractionSession, NativeCaptureResult } from "../a11y-tree/native-agent.ts";
 
 const root = resolve(import.meta.dirname!, "../../../..");
 const fixture = (name: string) =>
   parseA11yTree(readFileSync(join(root, "fixtures/native/macos", name, "a11y.json"), "utf8"));
 
 describe("native surface pure contract", () => {
+  it("maps Retina control bounds to finite screenshot hit-test coordinates", async () => {
+    const tree = fixture("retina-2x");
+    const node = tree.nodes.find((candidate) => candidate.identifier === "fixture.save")!;
+    const points: { xPx: number; yPx: number }[] = [];
+    const session = {
+      async hitTest(point: { xPx: number; yPx: number }) {
+        points.push(point);
+        return { node };
+      },
+    } as unknown as NativeInteractionSession;
+    const capture = {
+      scale: 2,
+      framePixels: { width: tree.viewport.width * 2, height: tree.viewport.height * 2 },
+    } as NativeCaptureResult;
+    const sample = await nativeGroundingSample(session, tree, capture, node);
+    assert.deepEqual(points, [
+      {
+        xPx: Math.round((node.rect.left + node.rect.width / 2) * 2),
+        yPx: Math.round((node.rect.top + node.rect.height / 2) * 2),
+      },
+    ]);
+    assert.equal(sample.inFrame, true);
+    assert.equal(sample.centreHit, true);
+    assert.equal(sample.clipped, false);
+  });
   it("prefers stable ids, then role/name, then structural paths", () => {
     const tree = fixture("basic");
     const save = tree.nodes.find((node) => node.identifier === "fixture.save")!;

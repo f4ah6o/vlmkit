@@ -2,10 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { UsageError } from "@mizchi/vlmkit-core/cli-error.ts";
 import { appendRunLedger } from "@mizchi/vlmkit-core/run-ledger.ts";
-import {
-  openNativeInteractionSession,
-  type NativeSurfaceLocator,
-} from "../a11y-tree/native-agent.ts";
+import { openNativeInteractionSession, type NativeSurfaceLocator } from "../a11y-tree/native-agent.ts";
 import type {
   FlowAction,
   FlowAssert,
@@ -14,10 +11,7 @@ import type {
   FlowVerifyReport,
   StepResult,
 } from "../inspect/flow-verify.ts";
-import {
-  captureNativeState,
-  nativeNodesForLocator,
-} from "./native-surface.ts";
+import { captureNativeState, nativeNodesForLocator } from "./native-surface.ts";
 
 function locatorOf(value: { locator?: FlowLocator; selector?: string }, where: string): NativeSurfaceLocator {
   if (value.locator) return value.locator;
@@ -60,16 +54,10 @@ async function runNativeAction(
 ): Promise<void> {
   switch (action.action) {
     case "click":
-      await session.perform(
-        { kind: "click", mode: "physical", locator: locatorOf(action, "click") },
-        { evidencePath },
-      );
+      await session.perform({ kind: "click", mode: "physical", locator: locatorOf(action, "click") }, { evidencePath });
       return;
     case "focus":
-      await session.perform(
-        { kind: "focus", mode: "semantic", locator: locatorOf(action, "focus") },
-        { evidencePath },
-      );
+      await session.perform({ kind: "focus", mode: "semantic", locator: locatorOf(action, "focus") }, { evidencePath });
       return;
     case "fill":
       await session.perform(
@@ -89,10 +77,7 @@ async function runNativeAction(
       } else if (action.selector) {
         throw new UsageError('press: native flows require "locator", not CSS "selector".');
       }
-      await session.perform(
-        { kind: "key", mode: "physical", keyCode: keyCode(action.key) },
-        { evidencePath },
-      );
+      await session.perform({ kind: "key", mode: "physical", keyCode: keyCode(action.key) }, { evidencePath });
       return;
     }
     case "hover":
@@ -110,13 +95,17 @@ function isVisible(
   if (node.states?.hidden) return false;
   const right = node.rect.left + node.rect.width;
   const bottom = node.rect.top + node.rect.height;
-  return node.rect.width > 0 && node.rect.height > 0 && right > 0 && bottom > 0 && node.rect.left < viewport.width && node.rect.top < viewport.height;
+  return (
+    node.rect.width > 0 &&
+    node.rect.height > 0 &&
+    right > 0 &&
+    bottom > 0 &&
+    node.rect.left < viewport.width &&
+    node.rect.top < viewport.height
+  );
 }
 
-function attrValue(
-  node: ReturnType<typeof nativeNodesForLocator>[number] | undefined,
-  name: string,
-): string | null {
+function attrValue(node: ReturnType<typeof nativeNodesForLocator>[number] | undefined, name: string): string | null {
   if (!node) return null;
   if (name === "role") return node.role;
   if (name === "name") return node.name ?? null;
@@ -130,10 +119,7 @@ function attrValue(
   return null;
 }
 
-function evalNativeAssertion(
-  tree: Parameters<typeof nativeNodesForLocator>[0],
-  spec: FlowAssert,
-): [boolean, string] {
+function evalNativeAssertion(tree: Parameters<typeof nativeNodesForLocator>[0], spec: FlowAssert): [boolean, string] {
   const locator = locatorOf(spec, `assert ${spec.assert}`);
   const nodes = nativeNodesForLocator(tree, locator);
   switch (spec.assert) {
@@ -154,7 +140,10 @@ function evalNativeAssertion(
       return [pass, pass ? "focused" : "not focused"];
     }
     case "text": {
-      const actual = nodes.map((node) => [node.name, node.value].filter(Boolean).join(" ")).join(" ").trim();
+      const actual = nodes
+        .map((node) => [node.name, node.value].filter(Boolean).join(" "))
+        .join(" ")
+        .trim();
       return [actual.includes(spec.contains), actual.slice(0, 160)];
     }
     case "count":
@@ -165,8 +154,11 @@ function evalNativeAssertion(
 function nativeActionLabel(action: FlowAction): string {
   if (action.action === "wait") return `wait ${action.ms}ms`;
   const target =
-    "locator" in action && action.locator ? JSON.stringify(action.locator) :
-    "selector" in action && action.selector ? action.selector : "(focused target)";
+    "locator" in action && action.locator
+      ? JSON.stringify(action.locator)
+      : "selector" in action && action.selector
+        ? action.selector
+        : "(focused target)";
   if (action.action === "press") return `press ${action.key} on ${target}`;
   return `${action.action} ${target}`;
 }

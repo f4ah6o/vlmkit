@@ -45,7 +45,9 @@ export async function runNativeDoctorCli(argv: readonly string[]): Promise<numbe
 
   console.log("");
   console.log(`${BOLD}${CYAN}Native Doctor${RESET}`);
-  console.log(`  ${DIM}protocol ${result.hello.protocol}${result.hello.agentVersion ? ` · agent ${result.hello.agentVersion}` : ""}${RESET}`);
+  console.log(
+    `  ${DIM}protocol ${result.hello.protocol}${result.hello.agentVersion ? ` · agent ${result.hello.agentVersion}` : ""}${RESET}`,
+  );
   const line = (label: string, pass: boolean) =>
     console.log(`  ${pass ? GREEN : RED}${pass ? "PASS" : "FAIL"}${RESET} ${label}`);
   line("Accessibility permission", result.doctor.accessibility.trusted);

@@ -422,7 +422,8 @@ try {
     assert.ok(dialogTree.nodes.some((node) => node.identifier === "fixture.dialog.close"));
 
     const main = await client.request("window.select", { sessionId, selector: { by: "main" } }).catch(() => null);
-    const targetWindow = main ?? (await client.request("window.select", { sessionId, selector: { by: "index", index: 0 } }));
+    const targetWindow =
+      main ?? (await client.request("window.select", { sessionId, selector: { by: "index", index: 0 } }));
     const scroll = await client.request("perform", {
       sessionId,
       windowId: targetWindow.windowId,

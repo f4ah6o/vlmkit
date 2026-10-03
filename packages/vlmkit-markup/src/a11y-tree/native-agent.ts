@@ -278,11 +278,13 @@ export interface NativeDoctorResult {
   };
 }
 
-export async function runNativeDoctor(options: {
-  agent?: string;
-  prompt?: boolean;
-  timeout?: number;
-} = {}): Promise<NativeDoctorResult> {
+export async function runNativeDoctor(
+  options: {
+    agent?: string;
+    prompt?: boolean;
+    timeout?: number;
+  } = {},
+): Promise<NativeDoctorResult> {
   if (process.platform !== "darwin") throw new UsageError("Native macOS doctor requires a macOS host.");
   const client = new NativeAgentClient(nativeAgentExecutable(options.agent), options.timeout);
   try {
@@ -298,8 +300,7 @@ export async function runNativeDoctor(options: {
 
 async function assertNativePermissions(client: NativeAgentClient): Promise<void> {
   const hello = await client.request<{ protocol: number }>("hello");
-  if (hello.protocol !== 1)
-    throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
+  if (hello.protocol !== 1) throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
   const doctor = await client.request<{
     accessibility: { trusted: boolean };
     screenCapture: { authorized: boolean };
@@ -472,8 +473,7 @@ export async function openNativeInteractionSession(options: {
           action,
           ...(performOptions?.evidencePath ? { evidencePath: resolve(performOptions.evidencePath) } : {}),
         }),
-      capture: (captureOptions) =>
-        captureNativeSession(client, sessionId!, window.windowId, captureOptions),
+      capture: (captureOptions) => captureNativeSession(client, sessionId!, window.windowId, captureOptions),
       async close(closeOptions) {
         if (closed) return;
         closed = true;

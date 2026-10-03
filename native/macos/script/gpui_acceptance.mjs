@@ -2,9 +2,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import {
-  openNativeInteractionSession,
-} from "@mizchi/vlmkit-markup/a11y-tree/native-agent.ts";
+import { openNativeInteractionSession } from "@mizchi/vlmkit-markup/a11y-tree/native-agent.ts";
 import { captureNativeState } from "@mizchi/vlmkit-markup/native/native-surface.ts";
 
 function value(argv, flag) {
@@ -42,7 +40,14 @@ if (argv.includes("--help") || argv.includes("-h")) {
   console.log(usage());
   process.exit(0);
 }
-const target = argv.find((arg, index) => !arg.startsWith("-") && argv[index - 1] !== "--id" && argv[index - 1] !== "--name" && argv[index - 1] !== "--agent" && argv[index - 1] !== "--out");
+const target = argv.find(
+  (arg, index) =>
+    !arg.startsWith("-") &&
+    argv[index - 1] !== "--id" &&
+    argv[index - 1] !== "--name" &&
+    argv[index - 1] !== "--agent" &&
+    argv[index - 1] !== "--out",
+);
 const stableId = value(argv, "--id");
 if (!target || !stableId) throw new Error(usage());
 
