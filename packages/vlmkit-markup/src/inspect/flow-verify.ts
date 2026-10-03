@@ -180,29 +180,35 @@ function describeAction(a: FlowAction): string {
   }
 }
 
-async function runAction(page: Page, a: FlowAction): Promise<void> {
-  if ("locator" in a && a.locator) {
+function browserSelector(value: { selector?: string; locator?: FlowLocator }, where: string): string {
+  if (value.locator) {
     throw new UsageError("Native flow locators require a macos: source; browser flows use selector.");
   }
+  if (!value.selector) throw new UsageError(`${where}: browser flow requires "selector".`);
+  return value.selector;
+}
+
+async function runAction(page: Page, a: FlowAction): Promise<void> {
   switch (a.action) {
     case "click":
-      await page.click(a.selector, { timeout: 5000, ...(a.force ? { force: true } : {}) });
+      await page.click(browserSelector(a, "click"), { timeout: 5000, ...(a.force ? { force: true } : {}) });
       return;
     case "press":
+      if (a.locator) throw new UsageError("Native flow locators require a macos: source; browser flows use selector.");
       if (a.selector) await page.press(a.selector, a.key, { timeout: 5000 });
       else await page.keyboard.press(a.key);
       return;
     case "fill":
-      await page.fill(a.selector, a.value, { timeout: 5000 });
+      await page.fill(browserSelector(a, "fill"), a.value, { timeout: 5000 });
       return;
     case "type":
-      await page.type(a.selector, a.text, { timeout: 5000 });
+      await page.type(browserSelector(a, "type"), a.text, { timeout: 5000 });
       return;
     case "focus":
-      await page.focus(a.selector, { timeout: 5000 });
+      await page.focus(browserSelector(a, "focus"), { timeout: 5000 });
       return;
     case "hover":
-      await page.hover(a.selector, { timeout: 5000 });
+      await page.hover(browserSelector(a, "hover"), { timeout: 5000 });
       return;
     case "wait":
       await page.waitForTimeout(a.ms);
@@ -220,6 +226,7 @@ function evalAssertion(spec: FlowAssert): (s: FlowAssert) => [boolean, string] {
   // receive spec). `spec` is threaded for closure-free serialization.
   void spec;
   return (s: FlowAssert): [boolean, string] => {
+    const selector = "selector" in s && typeof s.selector === "string" ? s.selector : "";
     const q = (sel: string) => document.querySelector(sel);
     const visible = (el: Element | null): boolean => {
       if (!el) return false;
@@ -229,31 +236,31 @@ function evalAssertion(spec: FlowAssert): (s: FlowAssert) => [boolean, string] {
     };
     switch (s.assert) {
       case "attr": {
-        const el = q(s.selector);
+        const el = q(selector);
         const actual = el ? el.getAttribute(s.name) : "(no element)";
         return [el != null && actual === s.equals, String(actual)];
       }
       case "visible": {
-        const el = q(s.selector);
+        const el = q(selector);
         return [visible(el), visible(el) ? "visible" : "hidden/absent"];
       }
       case "hidden": {
-        const el = q(s.selector);
+        const el = q(selector);
         return [!visible(el), visible(el) ? "visible" : "hidden/absent"];
       }
       case "focused": {
-        const el = q(s.selector);
+        const el = q(selector);
         const active = document.activeElement;
         const ok = !!el && (el === active || el.contains(active));
         return [ok, active ? (active.id ? "#" + active.id : active.tagName.toLowerCase()) : "(none)"];
       }
       case "text": {
-        const el = q(s.selector);
+        const el = q(selector);
         const t = el ? (el.textContent || "").replace(/\s+/g, " ").trim() : "";
         return [t.includes(s.contains), t.slice(0, 80)];
       }
       case "count": {
-        const n = document.querySelectorAll(s.selector).length;
+        const n = document.querySelectorAll(selector).length;
         return [n === s.equals, String(n)];
       }
       default:
