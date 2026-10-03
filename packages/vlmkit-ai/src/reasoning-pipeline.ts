@@ -14,7 +14,7 @@ import { createVlmClient, resolveModel, type VlmClient } from "./vlm-client.ts";
 import { VrtConfigError } from "./errors.ts";
 import { resizeBase64Png, type ResolutionPreset } from "@mizchi/vlmkit-core/image-resize.ts";
 import { readEnv } from "@mizchi/vlmkit-core/project-config.ts";
-import type { ContentProvenance } from "./provenance.ts";
+import { assertExternalAiAllowed, type ContentProvenance } from "./provenance.ts";
 
 // ---- Types ----
 
@@ -79,6 +79,8 @@ export interface AnalyzeOptions {
   baselineBase64?: string;
   currentBase64?: string;
   textReport?: string;
+  /** Provenance of content-bearing OCR/DOM/a11y text. Missing is fail-closed when textReport is set. */
+  textReportProvenance?: ContentProvenance;
   /** Resolution override (takes priority over pipeline config) */
   resolution?: ResolutionPreset;
   /** Cropped region for the target selector (base64 PNG) */
@@ -299,6 +301,10 @@ export function createReasoningPipeline(config?: PipelineConfig): ReasoningPipel
     llmModel: llmClient?.model ?? "none",
 
     async analyze(options) {
+      if (options.textReport !== undefined) {
+        assertExternalAiAllowed({ provenance: options.textReportProvenance }, "text", "VRT text report");
+      }
+
       // Lazy init VLM client — swallow config errors here so the pipeline
       // can degrade to LLM-only mode (handled in the next branch).
       if (!vlmClient) {
@@ -313,9 +319,11 @@ export function createReasoningPipeline(config?: PipelineConfig): ReasoningPipel
       if (!vlmClient) {
         // Fallback: use LLM with text-only report
         if (!llmClient) throw new Error("No VLM or LLM available");
-        const resp = await llmClient.completeWithImages(options.textReport ?? "No visual data available", {
-          maxTokens: 1024,
-        });
+        const fallbackContent =
+          options.textReport === undefined
+            ? "No visual data available"
+            : [{ type: "text" as const, text: options.textReport, provenance: options.textReportProvenance }];
+        const resp = await llmClient.completeWithImages(fallbackContent, { maxTokens: 1024 });
         const parsed = parseStage1Response(resp.content);
         return {
           ...parsed,
