@@ -401,6 +401,42 @@ try {
     assert.ok(capture.diagnostics.some((d) => d.code === "NATIVE_DUPLICATE_IDENTIFIER"));
     results.push({ check: "unchecked value and duplicate identifier warning", pass: true });
   });
+  await fixture([], async ({ sessionId }) => {
+    let selected = await client.request("window.select", { sessionId });
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      action: { kind: "press", mode: "semantic", locator: { by: "stable-id", value: "fixture.dialog" } },
+    });
+    await delay();
+    const dialogWindows = await client.request("window.list", { sessionId });
+    assert.ok(dialogWindows.some((window) => window.title === "Fixture dialog"));
+    selected = await client.request("window.select", { sessionId, selector: { by: "focused" } });
+    const dialogCapture = await client.request("snapshot.capture", {
+      sessionId,
+      windowId: selected.windowId,
+      outputTreePath: resolve(out, "dialog.json"),
+      outputPngPath: resolve(out, "dialog.png"),
+    });
+    const dialogTree = parseA11yTree(await readFile(dialogCapture.treePath, "utf8"));
+    assert.ok(dialogTree.nodes.some((node) => node.identifier === "fixture.dialog.close"));
+
+    const main = await client.request("window.select", { sessionId, selector: { by: "main" } }).catch(() => null);
+    const targetWindow = main ?? (await client.request("window.select", { sessionId, selector: { by: "index", index: 0 } }));
+    const scroll = await client.request("perform", {
+      sessionId,
+      windowId: targetWindow.windowId,
+      action: {
+        kind: "scroll",
+        mode: "physical",
+        locator: { by: "stable-id", value: "fixture.scroll" },
+        deltaY: 160,
+      },
+    });
+    assert.equal(scroll.kind, "scroll");
+    assert.equal(scroll.target.identifier, "fixture.scroll");
+    results.push({ check: "dialog discovery/capture and scroll action", pass: true });
+  });
   await fixture(["--ambiguous"], async ({ sessionId, windows }) => {
     assert.ok(windows.length >= 2);
     await assert.rejects(client.request("window.select", { sessionId }), /NATIVE_WINDOW_AMBIGUOUS/);
