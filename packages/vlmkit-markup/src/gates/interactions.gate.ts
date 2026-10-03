@@ -200,6 +200,9 @@ contract and every response mismatch is reported.`,
     ...pageLoad
   }) => {
     const native = source.startsWith("macos:");
+    if (native && (pageLoad.har || pageLoad.waitUntil)) {
+      throw new UsageError("Native interactions do not accept browser --har/--wait-until options.");
+    }
     const buildMap = async (target: string) => {
       if (native) {
         const { buildNativeInteractionMap } = await import("../native/native-surface.ts");
