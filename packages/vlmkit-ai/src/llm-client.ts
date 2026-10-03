@@ -47,7 +47,7 @@ export interface ImageContent {
 export interface TextContent {
   type: "text";
   text: string;
-  /** Omit only for fixed caller-owned prompt text. */
+  /** Array/object text fails closed when omitted. Use a bare string for fixed caller-owned prompts. */
   provenance?: ContentProvenance;
 }
 
@@ -82,6 +82,7 @@ export interface UnifiedLLMClient {
     textReport: string;
     textReportProvenance?: ContentProvenance;
     prompt?: string;
+    promptProvenance?: ContentProvenance;
     maxTokens?: number;
   }): Promise<LLMResponse>;
 
@@ -304,26 +305,27 @@ function buildDiffContent(options: {
   textReport: string;
   textReportProvenance?: ContentProvenance;
   prompt?: string;
+  promptProvenance?: ContentProvenance;
 }): MessageContent {
   const parts: Array<TextContent | ImageContent> = [];
 
   if (options.baselineBase64) {
-    parts.push({ type: "text", text: "Baseline screenshot:" });
+    parts.push({ type: "text", text: "Baseline screenshot:", provenance: "app_owned" });
     parts.push({ type: "image", base64: options.baselineBase64, provenance: options.baselineProvenance });
   }
   if (options.currentBase64) {
-    parts.push({ type: "text", text: "Current screenshot:" });
+    parts.push({ type: "text", text: "Current screenshot:", provenance: "app_owned" });
     parts.push({ type: "image", base64: options.currentBase64, provenance: options.currentProvenance });
   }
   if (options.heatmapBase64) {
-    parts.push({ type: "text", text: "Diff heatmap (red = changed pixels):" });
+    parts.push({ type: "text", text: "Diff heatmap (red = changed pixels):", provenance: "app_owned" });
     parts.push({ type: "image", base64: options.heatmapBase64, provenance: options.heatmapProvenance });
   }
 
-  parts.push({ type: "text", text: options.textReport, ...(options.textReportProvenance ? { provenance: options.textReportProvenance } : {}) });
+  parts.push({ type: "text", text: options.textReport, provenance: options.textReportProvenance });
 
   if (options.prompt) {
-    parts.push({ type: "text", text: options.prompt });
+    parts.push({ type: "text", text: options.prompt, provenance: options.promptProvenance });
   }
 
   return parts;
