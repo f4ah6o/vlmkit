@@ -9,6 +9,20 @@
 // ---- Errors ----
 export { VrtConfigError, type VrtConfigErrorCode } from "./errors.ts";
 
+// ---- Content provenance / external-AI egress ----
+export {
+  assertExternalAiAllowed,
+  assertExternalAiImageAllowed,
+  assertExternalAiMessageAllowed,
+  normalizeImageInput,
+  sanitizePngForExternalAi,
+  type ContentProvenance,
+  type ContentSource,
+  type VlmImageInput,
+  type VlmTextInput,
+  type RestrictedRegion,
+} from "./provenance.ts";
+
 // ---- LLM clients ----
 export {
   createUnifiedLLMClient,
