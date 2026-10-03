@@ -675,3 +675,18 @@ Save pixel/rect check verify this decision.
 Validation and limitations:
 [2026-10-03 native observer acceptance](../../docs/reports/2026-10-03-native-observer-p0.md).
 These parent designs remain open for the later native driver/GPUI phases.
+
+
+## P2-P5 implementation — 2026-10-03
+
+The native action, grounding, interaction, VRT/a11y-diff, verified-flow and doctor
+paths are implemented on PR #2. A generic black-box GPUI acceptance runner is also
+included without adding a GPUI runtime dependency.
+
+Implementation/validation matrix:
+[2026-10-03 native driver P2-P5 report](../../docs/reports/2026-10-03-native-driver-p2-p5.md).
+
+This design remains open until the documented macOS integration, TypeScript
+test/typecheck, real GPUI/gpui.mbt application acceptance, and remaining
+multi-display hardening gates are observed as PASS. Unexecuted gates are not
+treated as acceptance.
