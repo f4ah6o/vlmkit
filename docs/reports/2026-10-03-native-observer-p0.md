@@ -74,6 +74,11 @@ required Chromium binary was absent, and both full Chromium and headless-shell
 installation attempts timed out at the download server. Pure Flutter mapping and
 Android import regressions passed. No browser executable/version was substituted.
 
+Follow-up on 2026-10-03: all four browser regressions passed in a Linux cloud
+environment with Playwright's required Chromium headless shell. See
+[Flutter browser regressions](2026-10-03-flutter-browser-regressions.md) for the
+command, versions, results, and fixture limits.
+
 Completeness is reported by native scan, not asserted by the generic tree
 format: callers must check `native-incomplete` before consuming partial files.
 A transient ScreenCaptureKit -3811 capture failure was surfaced as
