@@ -253,16 +253,30 @@ finding.`,
       description: 'Replay "click x,y" / "move x,y" / "wheel x,y dy" (screenshot px) before measuring',
       repeatable: true,
     },
+    { name: "native-agent", placeholder: "path", kind: "path", description: "macOS native agent executable" },
+    { name: "launch", kind: "boolean", description: "Launch a macOS target when needed" },
+    {
+      name: "window",
+      placeholder: "selector",
+      kind: "string",
+      description: "macOS window: main|focused|index=N|window id",
+    },
+    { name: "max-depth", placeholder: "n", kind: "number", description: "Native AX traversal depth" },
+    { name: "max-nodes", placeholder: "n", kind: "number", description: "Native AX traversal node cap" },
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
-    const source = firstPositional(argv, "vlmkit check grounding <html-or-url>", [
+    const source = firstPositional(argv, "vlmkit check grounding <html-or-url|macos:target>", [
       "--resolution",
       "--precision-floor",
       "--aim-margin",
       "--mark",
       "--at",
       "--after",
+      "--native-agent",
+      "--window",
+      "--max-depth",
+      "--max-nodes",
     ]);
     const precisionFloor = optionalInt(argv, "precision-floor", { min: 1 });
     const aimMargin = optionalInt(argv, "aim-margin", { min: 0 });
@@ -271,6 +285,14 @@ finding.`,
     const markPath = readFlag(argv, "mark");
     const at = parseAtPoints(argv);
     const after = parseAfterActions(argv);
+    const nativeAgent = readFlag(argv, "native-agent");
+    const window = readFlag(argv, "window");
+    const maxDepth = optionalInt(argv, "max-depth", { min: 1 });
+    const maxNodes = optionalInt(argv, "max-nodes", { min: 1 });
+    const launch = argv.includes("--launch");
+    if (!source.startsWith("macos:") && (nativeAgent || window || maxDepth || maxNodes || launch)) {
+      throw new UsageError("--native-agent/--launch/--window/--max-depth/--max-nodes require a macos: source.");
+    }
     return {
       source,
       ...(resolution !== undefined ? { resolution } : {}),
@@ -280,6 +302,11 @@ finding.`,
       ...(markPath ? { markPath } : {}),
       ...(at.length > 0 ? { at } : {}),
       ...(after.length > 0 ? { after } : {}),
+      ...(nativeAgent ? { nativeAgent } : {}),
+      ...(window ? { window } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(maxNodes !== undefined ? { maxNodes } : {}),
+      ...(launch ? { launch: true } : {}),
       ...parsePageLoad(argv),
     };
   },

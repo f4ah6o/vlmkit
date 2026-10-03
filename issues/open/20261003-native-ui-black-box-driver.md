@@ -840,3 +840,18 @@ Before writing implementation code:
 6. turn P0-P6 into smaller `issues/open` packets only after those boundaries are verified against current code.
 
 No implementation should begin from this issue until the boundary audit above is complete.
+
+
+## P2-P5 implementation — 2026-10-03
+
+The native action, grounding, interaction, VRT/a11y-diff, verified-flow and doctor
+paths are implemented on PR #2. A generic black-box GPUI acceptance runner is also
+included without adding a GPUI runtime dependency.
+
+Implementation/validation matrix:
+[2026-10-03 native driver P2-P5 report](../../docs/reports/2026-10-03-native-driver-p2-p5.md).
+
+This design remains open until the documented macOS integration, TypeScript
+test/typecheck, real GPUI/gpui.mbt application acceptance, and remaining
+multi-display hardening gates are observed as PASS. Unexecuted gates are not
+treated as acceptance.
