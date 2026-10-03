@@ -139,7 +139,7 @@ function ancestorNames(tree: A11yTree, node: A11yNode): string[] {
 }
 
 function nativeHitTargetsNode(hit: NativeHitResult, node: A11yNode): boolean {
-  return [hit.node, ...hit.ancestors].some((candidate) => candidate.path === node.path);
+  return [hit.node, ...(hit.ancestors ?? [])].some((candidate) => candidate.path === node.path);
 }
 
 export async function nativeGroundingSample(
@@ -397,7 +397,9 @@ function elementKey(node: A11yNode) {
 }
 
 function focusedPath(tree: A11yTree): string | undefined {
-  return tree.nodes.find((node) => node.states?.focused)?.path;
+  return [...tree.nodes]
+    .filter((node) => node.states?.focused)
+    .sort((a, b) => b.path.split(">").length - a.path.split(">").length)[0]?.path;
 }
 
 function focusBelongsToTarget(focused: string | undefined, targetPath: string): boolean {
