@@ -269,7 +269,7 @@ func eventFlags(_ names: [String]) throws -> CGEventFlags {
     return flags
 }
 
-func physicalKey(_ keyCode: Int, modifiers: [String]) throws {
+func physicalKey(_ keyCode: Int, modifiers: [String], pid: pid_t) throws {
     guard keyCode >= 0, keyCode <= Int(UInt16.max) else {
         throw fail("NATIVE_INPUT_FAILED", "keyCode is outside the CoreGraphics virtual-key range.")
     }
@@ -281,11 +281,11 @@ func physicalKey(_ keyCode: Int, modifiers: [String]) throws {
     let flags = try eventFlags(modifiers)
     down.flags = flags
     up.flags = flags
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
+    down.postToPid(pid)
+    up.postToPid(pid)
 }
 
-func physicalText(_ text: String) throws {
+func physicalText(_ text: String, pid: pid_t) throws {
     let source = try eventSource()
     guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
           let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
@@ -298,8 +298,8 @@ func physicalText(_ text: String) throws {
             up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
         }
     }
-    down.post(tap: .cghidEventTap)
-    up.post(tap: .cghidEventTap)
+    down.postToPid(pid)
+    up.postToPid(pid)
 }
 
 func physicalScroll(at point: CGPoint, deltaX: Double, deltaY: Double) throws {

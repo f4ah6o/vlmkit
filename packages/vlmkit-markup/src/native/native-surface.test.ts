@@ -5,6 +5,7 @@ import { describe, it } from "vite-plus/test";
 import { parseA11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 import {
   nativeLocatorForNode,
+  nativeProbeLocatorForNode,
   nativeNodeMatchesLocator,
   nativeNodesForLocator,
   nativeSelectorForNode,
@@ -63,6 +64,62 @@ describe("native surface pure contract", () => {
     const locator = { by: "role-name", role: duplicates[0]!.role, name: "Duplicate" } as const;
     assert.equal(nativeNodesForLocator(tree, locator).length, duplicates.length);
     assert.deepEqual(nativeNodesForLocator(tree, { ...locator, nth: 1 }), [duplicates[1]]);
+  });
+
+  it("uses uniqueness-aware locators for internal probes", () => {
+    const tree = fixture("duplicate-labels");
+    const duplicates = tree.nodes.filter((node) => node.name === "Duplicate");
+    assert.deepEqual(nativeProbeLocatorForNode(tree, duplicates[0]!), {
+      by: "stable-id",
+      value: "fixture.duplicate.0",
+    });
+
+    const duplicateIds = {
+      ...tree,
+      nodes: tree.nodes.map((node) =>
+        node.name === "Duplicate" ? { ...node, identifier: "fixture.duplicate" } : node,
+      ),
+    };
+    assert.deepEqual(nativeProbeLocatorForNode(duplicateIds, duplicateIds.nodes[1]!), {
+      by: "role-name",
+      role: "button",
+      name: "Duplicate",
+      nth: 0,
+    });
+    assert.deepEqual(nativeProbeLocatorForNode(duplicateIds, duplicateIds.nodes[2]!), {
+      by: "role-name",
+      role: "button",
+      name: "Duplicate",
+      nth: 1,
+    });
+  });
+
+  it("accepts an actionable ancestor as a successful grounding hit", async () => {
+    const tree = fixture("basic");
+    const node = tree.nodes.find((candidate) => candidate.identifier === "fixture.save")!;
+    let hits = 0;
+    const child = {
+      path: `${node.path}>text[0]`,
+      role: "text",
+      platformRole: "AXStaticText",
+      name: node.name,
+      rect: node.rect,
+      actions: [],
+    };
+    const session = {
+      async hitTest() {
+        hits++;
+        return { node: child, ancestors: [node] };
+      },
+    } as unknown as NativeInteractionSession;
+    const capture = {
+      scale: 1,
+      framePixels: { width: tree.viewport.width, height: tree.viewport.height },
+    } as NativeCaptureResult;
+    const sample = await nativeGroundingSample(session, tree, capture, node);
+    assert.equal(sample.centreHit, true);
+    assert.equal(sample.interceptedBy, undefined);
+    assert.equal(hits, 1);
   });
 
   it("point locators are action-only and do not pretend to match a semantic node", () => {

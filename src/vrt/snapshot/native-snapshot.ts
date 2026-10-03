@@ -51,16 +51,20 @@ function numberAfter(
   return value;
 }
 
-function nativeDefaultLabel(source: string): string {
+function nativeLabelPart(value: string): string {
+  return value
+    .replace(/\.app$/i, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+}
+
+function nativeDefaultLabel(source: string, window?: string): string {
   const value = source.slice("macos:".length);
   const base = value.replace(/^pid=/, "pid-").split("/").filter(Boolean).at(-1) ?? "app";
-  return (
-    base
-      .replace(/\.app$/i, "")
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .toLowerCase() || "native"
-  );
+  const appLabel = nativeLabelPart(base) || "native";
+  if (!window) return appLabel;
+  return `${appLabel}-window-${nativeLabelPart(window) || "selected"}`;
 }
 
 export function parseNativeSnapshotArgs(argv: readonly string[], cwd = process.cwd()): NativeSnapshotArgs {
@@ -100,20 +104,21 @@ export function parseNativeSnapshotArgs(argv: readonly string[], cwd = process.c
   const maxDepth = numberAfter(argv, "--max-depth", { min: 1 });
   const maxNodes = numberAfter(argv, "--max-nodes", { min: 1 });
   const timeout = numberAfter(argv, "--timeout", { min: 1 });
+  const window = valueAfter(argv, "--window");
   return {
     source,
     outputDir: resolve(
       cwd,
       valueAfter(argv, "--output") ?? valueAfter(argv, "--output-dir") ?? "test-results/snapshots",
     ),
-    label: valueAfter(argv, "--label") ?? nativeDefaultLabel(source),
+    label: valueAfter(argv, "--label") ?? nativeDefaultLabel(source, window),
     threshold,
     failOnDiff: argv.includes("--fail-on-diff"),
     failOnNewBaseline: argv.includes("--fail-on-new-baseline"),
     ...(maxDiffRatio !== undefined ? { maxDiffRatio } : {}),
     ...(valueAfter(argv, "--native-agent") ? { nativeAgent: valueAfter(argv, "--native-agent") } : {}),
     launch: argv.includes("--launch"),
-    ...(valueAfter(argv, "--window") ? { window: valueAfter(argv, "--window") } : {}),
+    ...(window ? { window } : {}),
     ...(maxDepth !== undefined ? { maxDepth } : {}),
     ...(maxNodes !== undefined ? { maxNodes } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
@@ -164,6 +169,21 @@ export async function runNativeSnapshotCli(argv: readonly string[], options: { c
   const baselinePath = join(parsed.outputDir, `${parsed.label}-native-baseline.png`);
   const baselineTreePath = join(parsed.outputDir, `${parsed.label}-native-baseline.a11y.json`);
 
+  const hasBaselineImage = await access(baselinePath).then(
+    () => true,
+    () => false,
+  );
+  const hasBaselineTree = await access(baselineTreePath).then(
+    () => true,
+    () => false,
+  );
+  if (hasBaselineImage !== hasBaselineTree) {
+    throw new UsageError(
+      `Native snapshot baseline is incomplete for ${parsed.label}: expected both PNG and AX sidecar; refusing to overwrite either file.`,
+    );
+  }
+  const hasBaseline = hasBaselineImage && hasBaselineTree;
+
   const captured = await captureNativeA11y({
     source: parsed.source,
     out: treePath,
@@ -175,14 +195,6 @@ export async function runNativeSnapshotCli(argv: readonly string[], options: { c
     maxNodes: parsed.maxNodes,
     timeout: parsed.timeout,
   });
-
-  let hasBaseline = true;
-  try {
-    await access(baselinePath);
-    await access(baselineTreePath);
-  } catch {
-    hasBaseline = false;
-  }
 
   let diffRatio: number | undefined;
   let semanticDiff: ReturnType<typeof diffA11yTrees> | undefined;

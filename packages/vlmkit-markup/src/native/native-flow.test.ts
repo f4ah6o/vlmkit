@@ -79,11 +79,27 @@ describe("native flow dispatch (mock session, no live acceptance)", () => {
     assert.equal(mocks.perform.mock.calls.length, 0);
     assert.equal(mocks.close.mock.calls.length, 1);
   });
-  it("rejects CSS action selectors without sending native input", async () => {
-    const report = await run({ steps: [{ do: { action: "click", selector: "#save" } }] });
-    assert.equal(report.done, false);
-    assert.match(report.steps[0]?.actionError ?? "", /native flows require/);
+  it("rejects CSS action selectors before opening the native session", async () => {
+    await assert.rejects(() => run({ steps: [{ do: { action: "click", selector: "#save" } }] }), /native flows require/);
+    assert.equal(mocks.open.mock.calls.length, 0);
     assert.equal(mocks.perform.mock.calls.length, 0);
-    assert.equal(mocks.close.mock.calls.length, 1);
+  });
+
+  it("rejects browser-only click.force before opening or sending native input", async () => {
+    const locator = { by: "stable-id", value: "save" } as const;
+    await assert.rejects(
+      () => run({ steps: [{ do: { action: "click", locator, force: true } }] }),
+      /click\.force is browser-only/,
+    );
+    assert.equal(mocks.open.mock.calls.length, 0);
+    assert.equal(mocks.perform.mock.calls.length, 0);
+  });
+
+  it("rejects browser viewport semantics before opening the native session", async () => {
+    await assert.rejects(
+      () => run({ viewport: { width: 800, height: 600 }, steps: [{ do: { action: "wait", ms: 0 } }] }),
+      /viewport overrides/,
+    );
+    assert.equal(mocks.open.mock.calls.length, 0);
   });
 });

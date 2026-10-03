@@ -8,6 +8,7 @@ import {
   openNativeInteractionSession,
   type NativeCaptureResult,
   type NativeInteractionSession,
+  type NativeHitResult,
   type NativeSurfaceLocator,
 } from "../a11y-tree/native-agent.ts";
 import {
@@ -18,7 +19,12 @@ import {
   type GroundingScanReport,
   type GroundingTargetSample,
 } from "../inspect/grounding-scan.ts";
-import type { ActivationResult, InteractionElement, InteractionMapResult } from "../inspect/interaction-map.ts";
+import {
+  activationKeyForRole,
+  type ActivationResult,
+  type InteractionElement,
+  type InteractionMapResult,
+} from "../inspect/interaction-map.ts";
 
 export interface NativeSurfaceOptions {
   source: string;
@@ -40,6 +46,25 @@ export interface NativeCapturedState {
 export function nativeLocatorForNode(node: A11yNode): NativeSurfaceLocator {
   if (node.identifier) return { by: "stable-id", value: node.identifier };
   if (node.name) return { by: "role-name", role: node.role, name: node.name };
+  return { by: "path", value: node.path };
+}
+
+export function nativeProbeLocatorForNode(
+  tree: A11yTree,
+  node: A11yNode,
+): Exclude<NativeSurfaceLocator, { by: "point" }> {
+  if (node.identifier) {
+    const matches = tree.nodes.filter((candidate) => candidate.identifier === node.identifier);
+    if (matches.length === 1) return { by: "stable-id", value: node.identifier };
+  }
+  if (node.name) {
+    const matches = tree.nodes.filter(
+      (candidate) => candidate.role === node.role && (candidate.name ?? "") === node.name,
+    );
+    if (matches.length === 1) return { by: "role-name", role: node.role, name: node.name };
+    const nth = matches.findIndex((candidate) => candidate.path === node.path);
+    if (nth >= 0) return { by: "role-name", role: node.role, name: node.name, nth };
+  }
   return { by: "path", value: node.path };
 }
 
@@ -113,6 +138,10 @@ function ancestorNames(tree: A11yTree, node: A11yNode): string[] {
   return out;
 }
 
+function nativeHitTargetsNode(hit: NativeHitResult, node: A11yNode): boolean {
+  return [hit.node, ...hit.ancestors].some((candidate) => candidate.path === node.path);
+}
+
 export async function nativeGroundingSample(
   session: NativeInteractionSession,
   tree: A11yTree,
@@ -137,9 +166,7 @@ export async function nativeGroundingSample(
   if (painted.width > 0 && painted.height > 0) {
     try {
       const hit = await session.hitTest({ xPx: Math.round(clickPoint.x), yPx: Math.round(clickPoint.y) });
-      const same =
-        (node.identifier && hit.node.identifier === node.identifier) ||
-        (!node.identifier && hit.node.path === node.path);
+      const same = nativeHitTargetsNode(hit, node);
       centreHit = !!same;
       if (!same) interceptedBy = hit.node.identifier ?? hit.node.path;
     } catch {
@@ -158,9 +185,7 @@ export async function nativeGroundingSample(
         const y = painted.y + painted.height * fy;
         try {
           const hit = await session.hitTest({ xPx: Math.round(x), yPx: Math.round(y) });
-          const same =
-            (node.identifier && hit.node.identifier === node.identifier) ||
-            (!node.identifier && hit.node.path === node.path);
+          const same = nativeHitTargetsNode(hit, node);
           if (same) {
             reachable = {
               x,
@@ -371,6 +396,91 @@ function elementKey(node: A11yNode) {
   return `${node.role}|${(node.name ?? "").replace(/\s+/g, " ").trim().toLowerCase()}`;
 }
 
+function focusedPath(tree: A11yTree): string | undefined {
+  return tree.nodes.find((node) => node.states?.focused)?.path;
+}
+
+function focusBelongsToTarget(focused: string | undefined, targetPath: string): boolean {
+  return !!focused && (focused === targetPath || focused.startsWith(`${targetPath}>`));
+}
+
+function interactionKeyCode(key: string): number {
+  switch (key) {
+    case "Enter":
+      return 36;
+    case " ":
+      return 49;
+    case "ArrowRight":
+      return 124;
+    case "ArrowDown":
+      return 125;
+    default:
+      throw new UsageError(`Native interaction probe has no CoreGraphics key code for ${JSON.stringify(key)}.`);
+  }
+}
+
+function focusedInteractive(all: A11yNode[], focused: string | undefined): A11yNode | undefined {
+  if (!focused) return undefined;
+  return [...all]
+    .filter((node) => focusBelongsToTarget(focused, node.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+}
+
+async function collectNativeTabStops(
+  session: NativeInteractionSession,
+  state: NativeCapturedState,
+  dir: string,
+  options: NativeSurfaceOptions,
+  all: A11yNode[],
+): Promise<{ state: NativeCapturedState; focusIndicators: Map<string, boolean> }> {
+  const focusIndicators = new Map<string, boolean>();
+  if (all.length === 0) return { state, focusIndicators };
+  const seenFocusPaths = new Set<string>();
+  const limit = Math.min(96, all.length * 3 + 8);
+  for (let step = 0; step < limit; step++) {
+    const before = state;
+    await session.perform({ kind: "key", mode: "physical", keyCode: 48 });
+    const after = await captureNativeState(session, dir, `tab-${step}`, options);
+    state = after;
+    const focused = focusedPath(after.tree);
+    if (!focused) continue;
+    if (seenFocusPaths.has(focused)) break;
+    seenFocusPaths.add(focused);
+    const target = focusedInteractive(all, focused);
+    if (!target || focusIndicators.has(target.path)) continue;
+    const currentTarget = after.tree.nodes.find((node) => node.path === target.path) ?? target;
+    focusIndicators.set(
+      target.path,
+      await focusChangedPixels(before.pngPath, after.pngPath, currentTarget, after.capture.scale),
+    );
+  }
+  return { state, focusIndicators };
+}
+
+async function focusNativeTargetWithTab(
+  session: NativeInteractionSession,
+  state: NativeCapturedState,
+  dir: string,
+  options: NativeSurfaceOptions,
+  targetPath: string,
+  interactiveCount: number,
+  label: string,
+): Promise<{ state: NativeCapturedState; reached: boolean }> {
+  if (focusBelongsToTarget(focusedPath(state.tree), targetPath)) return { state, reached: true };
+  const seenFocusPaths = new Set<string>();
+  const limit = Math.min(96, interactiveCount * 3 + 8);
+  for (let step = 0; step < limit; step++) {
+    await session.perform({ kind: "key", mode: "physical", keyCode: 48 });
+    state = await captureNativeState(session, dir, `${label}-tab-${step}`, options);
+    const focused = focusedPath(state.tree);
+    if (focusBelongsToTarget(focused, targetPath)) return { state, reached: true };
+    if (!focused) continue;
+    if (seenFocusPaths.has(focused)) break;
+    seenFocusPaths.add(focused);
+  }
+  return { state, reached: false };
+}
+
 export async function buildNativeInteractionMap(
   options: NativeSurfaceOptions & { maxElements: number },
 ): Promise<InteractionMapResult> {
@@ -386,46 +496,54 @@ export async function buildNativeInteractionMap(
     let state = await captureNativeState(session, dir, "base", options);
     const all = state.tree.nodes.filter(isInteractive);
     const picked = all.slice(0, options.maxElements);
+    const tabWalk = await collectNativeTabStops(session, state, dir, options, all);
+    state = tabWalk.state;
     const elements: InteractionElement[] = [];
+
     for (let index = 0; index < picked.length; index++) {
       const original = picked[index]!;
-      const locator = nativeLocatorForNode(original);
-      let tabReachable = false;
-      let focusIndicator: boolean | null = null;
-      const beforeFocus = state;
-      try {
-        await session.perform({ kind: "focus", mode: "semantic", locator });
-        const afterFocus = await captureNativeState(session, dir, `focus-${index}`, options);
-        const focused = nativeNodesForLocator(afterFocus.tree, locator)[0];
-        tabReachable = !!focused?.states?.focused;
-        focusIndicator = tabReachable
-          ? await focusChangedPixels(beforeFocus.pngPath, afterFocus.pngPath, original, afterFocus.capture.scale)
-          : null;
-        state = afterFocus;
-      } catch {
-        tabReachable = false;
-      }
-
+      const tabReachable = tabWalk.focusIndicators.has(original.path);
+      const focusIndicator = tabReachable ? tabWalk.focusIndicators.get(original.path)! : null;
       let activation: ActivationResult | undefined;
-      if (original.actions?.includes("tap")) {
-        const beforeNode = nativeNodesForLocator(state.tree, locator)[0] ?? original;
-        const beforePng = await readFile(state.pngPath);
-        try {
-          await session.perform({ kind: "press", mode: "semantic", locator });
-          const afterPress = await captureNativeState(session, dir, `press-${index}`, options);
-          const afterNode = nativeNodesForLocator(afterPress.tree, locator)[0];
-          const afterPng = await readFile(afterPress.pngPath);
+      const key = activationKeyForRole(original.role);
+
+      if (key && tabReachable) {
+        const focused = await focusNativeTargetWithTab(
+          session,
+          state,
+          dir,
+          options,
+          original.path,
+          all.length,
+          `activate-${index}`,
+        );
+        state = focused.state;
+        if (focused.reached) {
+          const currentOriginal = state.tree.nodes.find((node) => node.path === original.path) ?? original;
+          const locator = nativeProbeLocatorForNode(state.tree, currentOriginal);
+          const beforeNode = nativeNodesForLocator(state.tree, locator)[0] ?? currentOriginal;
+          const beforePng = await readFile(state.pngPath);
+          await session.perform({
+            kind: "key",
+            mode: "physical",
+            keyCode: interactionKeyCode(key),
+          });
+          const afterKey = await captureNativeState(session, dir, `activate-${index}-after`, options);
+          const afterNode =
+            afterKey.tree.nodes.find((node) => node.path === original.path) ??
+            nativeNodesForLocator(afterKey.tree, locator)[0];
+          const afterPng = await readFile(afterKey.pngPath);
+          const afterFocused = focusedPath(afterKey.tree);
+          const movedTo = focusedInteractive(all, afterFocused);
           activation = {
-            key: "AXPress",
+            key: key === " " ? "Space" : key,
             ariaDelta: activationDelta(beforeNode, afterNode),
             controlsBecameVisible: null,
             layoutChanged: !beforePng.equals(afterPng),
-            focusMovedTo: null,
+            focusMovedTo:
+              movedTo && movedTo.path !== original.path ? all.findIndex((node) => node.path === movedTo.path) : null,
           };
-          state = afterPress;
-        } catch {
-          // A reported action that cannot execute is intentionally represented by
-          // a missing activation so deriveInteractionIssues marks it inert.
+          state = afterKey;
         }
       }
 
