@@ -66,7 +66,7 @@ func describeElement(_ element: AXUIElement, origin: CGPoint, path: String? = ni
         "role": role,
         "platformRole": platformRole,
         "rect": rectJSON(local),
-        "actions": normalizedActions(element, reader)
+        "actions": normalizedActions(element, reader: reader)
     ]
     if let path { out["path"] = path }
     if let subrole { out["platformSubrole"] = subrole }

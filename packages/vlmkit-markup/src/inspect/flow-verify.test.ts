@@ -117,7 +117,6 @@ test(
   },
 );
 
-
 test("verify flow: native locators validate without a DOM selector", () => {
   const flow: Flow = {
     steps: [

@@ -219,10 +219,20 @@ flow.json: { "viewport"?, "steps": [ { "label"?, "do": <action>, "expect": [<ass
     },
     { name: "native-agent", placeholder: "path", kind: "path", description: "macOS native agent executable" },
     { name: "launch", kind: "boolean", description: "Launch a macOS target when needed" },
-    { name: "window", placeholder: "selector", kind: "string", description: "macOS window: main|focused|index=N|window id" },
+    {
+      name: "window",
+      placeholder: "selector",
+      kind: "string",
+      description: "macOS window: main|focused|index=N|window id",
+    },
     { name: "max-depth", placeholder: "n", kind: "number", description: "Native AX traversal depth" },
     { name: "max-nodes", placeholder: "n", kind: "number", description: "Native AX traversal node cap" },
-    { name: "artifacts", placeholder: "dir", kind: "path", description: "Native per-step tree/screenshot evidence directory" },
+    {
+      name: "artifacts",
+      placeholder: "dir",
+      kind: "path",
+      description: "Native per-step tree/screenshot evidence directory",
+    },
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
@@ -246,9 +256,12 @@ flow.json: { "viewport"?, "steps": [ { "label"?, "do": <action>, "expect": [<ass
     const launch = argv.includes("--launch");
     const native = source.startsWith("macos:");
     if (!native && (nativeAgent || window || maxDepth || maxNodes || artifactDir || launch)) {
-      throw new UsageError("--native-agent/--launch/--window/--max-depth/--max-nodes/--artifacts require a macos: source.");
+      throw new UsageError(
+        "--native-agent/--launch/--window/--max-depth/--max-nodes/--artifacts require a macos: source.",
+      );
     }
-    if (native && storageState) throw new UsageError("--storage-state is browser-only and is not available for macos: flows.");
+    if (native && storageState)
+      throw new UsageError("--storage-state is browser-only and is not available for macos: flows.");
     return {
       source,
       flowPath,

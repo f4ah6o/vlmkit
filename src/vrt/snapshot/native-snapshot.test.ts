@@ -38,10 +38,7 @@ describe("native snapshot pure contract", () => {
 
   it("rejects browser-only or ambiguous native snapshot inputs", () => {
     assert.throws(() => parseNativeSnapshotArgs(["https://example.com"]), /macos:/i);
-    assert.throws(
-      () => parseNativeSnapshotArgs(["macos:one", "macos:two"]),
-      /exactly one/i,
-    );
+    assert.throws(() => parseNativeSnapshotArgs(["macos:one", "macos:two"]), /exactly one/i);
     assert.throws(
       () => parseNativeSnapshotArgs(["macos:one", "--mask", ".dynamic"]),
       /unsupported native snapshot option/i,
@@ -49,9 +46,7 @@ describe("native snapshot pure contract", () => {
   });
 
   it("projects flat AX paths into the existing semantic diff tree", () => {
-    const tree = parseA11yTree(
-      readFileSync(join(root, "fixtures/native/macos/basic/a11y.json"), "utf8"),
-    );
+    const tree = parseA11yTree(readFileSync(join(root, "fixtures/native/macos/basic/a11y.json"), "utf8"));
     const snapshot = nativeTreeSnapshot(tree, "fixture-native");
     assert.equal(snapshot.testId, "fixture-native");
     assert.equal(snapshot.tree.role, "window");

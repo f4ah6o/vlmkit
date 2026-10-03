@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { UsageError } from "@mizchi/vlmkit-core/cli-error.ts";
 import { decodePng } from "@mizchi/vlmkit-core/png-utils.ts";
-import {
-  isInteractive,
-  type A11yNode,
-  type A11yTree,
-} from "@mizchi/vlmkit-judge/a11y-tree.ts";
+import { isInteractive, type A11yNode, type A11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 import {
   openNativeInteractionSession,
   type NativeCaptureResult,
@@ -22,11 +18,7 @@ import {
   type GroundingScanReport,
   type GroundingTargetSample,
 } from "../inspect/grounding-scan.ts";
-import type {
-  ActivationResult,
-  InteractionElement,
-  InteractionMapResult,
-} from "../inspect/interaction-map.ts";
+import type { ActivationResult, InteractionElement, InteractionMapResult } from "../inspect/interaction-map.ts";
 
 export interface NativeSurfaceOptions {
   source: string;
@@ -94,15 +86,11 @@ export async function captureNativeState(
   return { ...result, treePath, pngPath };
 }
 
-function intersect(
-  rect: { left: number; top: number; width: number; height: number },
-  width: number,
-  height: number,
-) {
-  const left = Math.max(0, rect.left);
-  const top = Math.max(0, rect.top);
-  const right = Math.min(width, rect.left + rect.width);
-  const bottom = Math.min(height, rect.top + rect.height);
+function intersect(rect: { x: number; y: number; width: number; height: number }, width: number, height: number) {
+  const left = Math.max(0, rect.x);
+  const top = Math.max(0, rect.y);
+  const right = Math.min(width, rect.x + rect.width);
+  const bottom = Math.min(height, rect.y + rect.height);
   return {
     x: left,
     y: top,
@@ -177,7 +165,12 @@ export async function nativeGroundingSample(
             reachable = {
               x,
               y,
-              room: Math.min(x - painted.x, painted.x + painted.width - x, y - painted.y, painted.y + painted.height - y),
+              room: Math.min(
+                x - painted.x,
+                painted.x + painted.width - x,
+                y - painted.y,
+                painted.y + painted.height - y,
+              ),
               sampled: probes.length,
               clear: 1,
             };
@@ -208,10 +201,7 @@ export async function nativeGroundingSample(
     disabled: !!node.states?.disabled,
     inFrame: painted.width > 0 && painted.height > 0 && !node.states?.hidden,
     clipped:
-      painted.x !== bbox.x ||
-      painted.y !== bbox.y ||
-      painted.width !== bbox.width ||
-      painted.height !== bbox.height,
+      painted.x !== bbox.x || painted.y !== bbox.y || painted.width !== bbox.width || painted.height !== bbox.height,
     ...(painted.width > 0 && painted.height > 0 ? { painted } : {}),
     ancestorTexts: ancestorNames(tree, node),
   };
@@ -279,7 +269,9 @@ export async function runNativeGrounding(
         page: {
           viewportWidth: state.capture.framePixels.width,
           viewportHeight: state.capture.framePixels.height,
-          capped: state.capture.counts.truncated + Math.max(0, state.tree.nodes.filter(isInteractive).length - candidates.length),
+          capped:
+            state.capture.counts.truncated +
+            Math.max(0, state.tree.nodes.filter(isInteractive).length - candidates.length),
         },
         targets: samples,
       },
@@ -344,7 +336,12 @@ function activationDelta(before: A11yNode | undefined, after: A11yNode | undefin
   return out;
 }
 
-async function focusChangedPixels(beforePath: string, afterPath: string, node: A11yNode, scale: number): Promise<boolean> {
+async function focusChangedPixels(
+  beforePath: string,
+  afterPath: string,
+  node: A11yNode,
+  scale: number,
+): Promise<boolean> {
   const before = await decodePng(beforePath);
   const after = await decodePng(afterPath);
   if (before.width !== after.width || before.height !== after.height) return true;

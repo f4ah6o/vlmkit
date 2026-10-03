@@ -33,11 +33,19 @@ function valueAfter(argv: readonly string[], flag: string): string | undefined {
   return value;
 }
 
-function numberAfter(argv: readonly string[], flag: string, options: { min?: number; max?: number } = {}): number | undefined {
+function numberAfter(
+  argv: readonly string[],
+  flag: string,
+  options: { min?: number; max?: number } = {},
+): number | undefined {
   const raw = valueAfter(argv, flag);
   if (raw === undefined) return undefined;
   const value = Number(raw);
-  if (!Number.isFinite(value) || (options.min !== undefined && value < options.min) || (options.max !== undefined && value > options.max)) {
+  if (
+    !Number.isFinite(value) ||
+    (options.min !== undefined && value < options.min) ||
+    (options.max !== undefined && value > options.max)
+  ) {
     throw new UsageError(`Invalid ${flag} value: ${raw}`);
   }
   return value;
@@ -46,7 +54,13 @@ function numberAfter(argv: readonly string[], flag: string, options: { min?: num
 function nativeDefaultLabel(source: string): string {
   const value = source.slice("macos:".length);
   const base = value.replace(/^pid=/, "pid-").split("/").filter(Boolean).at(-1) ?? "app";
-  return base.replace(/\.app$/i, "").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase() || "native";
+  return (
+    base
+      .replace(/\.app$/i, "")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "native"
+  );
 }
 
 export function parseNativeSnapshotArgs(argv: readonly string[], cwd = process.cwd()): NativeSnapshotArgs {
@@ -78,7 +92,7 @@ export function parseNativeSnapshotArgs(argv: readonly string[], cwd = process.c
       source = arg;
       continue;
     }
-    throw new UsageError(`Unexpected native snapshot argument: ${arg}`);
+    throw new UsageError(`Unexpected native snapshot argument: ${arg}; expected a macos: target.`);
   }
   if (!source) throw new UsageError("Native snapshot requires a macos:<bundle-id|pid=N|app-path> target.");
   const threshold = numberAfter(argv, "--threshold", { min: 0, max: 1 }) ?? 0.1;
@@ -88,7 +102,10 @@ export function parseNativeSnapshotArgs(argv: readonly string[], cwd = process.c
   const timeout = numberAfter(argv, "--timeout", { min: 1 });
   return {
     source,
-    outputDir: resolve(cwd, valueAfter(argv, "--output") ?? valueAfter(argv, "--output-dir") ?? "test-results/snapshots"),
+    outputDir: resolve(
+      cwd,
+      valueAfter(argv, "--output") ?? valueAfter(argv, "--output-dir") ?? "test-results/snapshots",
+    ),
     label: valueAfter(argv, "--label") ?? nativeDefaultLabel(source),
     threshold,
     failOnDiff: argv.includes("--fail-on-diff"),
@@ -135,16 +152,11 @@ export function nativeTreeSnapshot(tree: A11yTree, testId: string): A11ySnapshot
     }
   }
   const treeRoot =
-    roots.length === 1
-      ? roots[0]!
-      : ({ role: "window", name: testId, children: roots } satisfies CoreA11yNode);
+    roots.length === 1 ? roots[0]! : ({ role: "window", name: testId, children: roots } satisfies CoreA11yNode);
   return { testId, testTitle: testId, tree: treeRoot };
 }
 
-export async function runNativeSnapshotCli(
-  argv: readonly string[],
-  options: { cwd?: string } = {},
-): Promise<number> {
+export async function runNativeSnapshotCli(argv: readonly string[], options: { cwd?: string } = {}): Promise<number> {
   const parsed = parseNativeSnapshotArgs(argv, options.cwd ?? process.cwd());
   await mkdir(parsed.outputDir, { recursive: true });
   const currentPath = join(parsed.outputDir, `${parsed.label}-native-current.png`);
@@ -198,6 +210,7 @@ export async function runNativeSnapshotCli(
         detectShift: true,
         threshold: parsed.threshold,
       });
+      if (!report) throw new Error("Native snapshot diff report requires a baseline.");
       globalShift = report.globalShift;
       compensatedDiffRatio = report.compensatedDiffCount / report.totalPixels;
       shiftOnly = report.shiftOnly;

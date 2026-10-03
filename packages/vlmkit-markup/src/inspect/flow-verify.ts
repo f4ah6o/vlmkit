@@ -39,9 +39,7 @@ import type { NativeSurfaceLocator } from "../a11y-tree/native-agent.ts";
 
 export type FlowLocator = Exclude<NativeSurfaceLocator, { by: "point" }>;
 
-type SelectorOrLocator =
-  | { selector: string; locator?: never }
-  | { locator: FlowLocator; selector?: never };
+type SelectorOrLocator = { selector: string; locator?: never } | { locator: FlowLocator; selector?: never };
 
 export type FlowAction =
   /**
@@ -54,7 +52,7 @@ export type FlowAction =
    * flow author click through the disabled state instead.
    */
   | ({ action: "click"; force?: boolean } & SelectorOrLocator)
-  | ({ action: "press"; key: string } & ({ selector?: string; locator?: FlowLocator }))
+  | ({ action: "press"; key: string } & { selector?: string; locator?: FlowLocator })
   | ({ action: "fill"; value: string } & SelectorOrLocator)
   | ({ action: "type"; text: string } & SelectorOrLocator)
   | ({ action: "focus" } & SelectorOrLocator)
