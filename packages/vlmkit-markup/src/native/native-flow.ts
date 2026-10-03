@@ -163,10 +163,35 @@ function nativeActionLabel(action: FlowAction): string {
   return `${action.action} ${target}`;
 }
 
+function validateNativeFlowSemantics(options: FlowVerifyOptions): void {
+  if (options.flow.viewport) {
+    throw new UsageError("Native flow does not accept browser viewport overrides.");
+  }
+  for (let index = 0; index < options.flow.steps.length; index++) {
+    const step = options.flow.steps[index]!;
+    const action = step.do;
+    if ("selector" in action && action.selector) {
+      throw new UsageError(`step ${index}: native flows require "locator", not CSS "selector".`);
+    }
+    if (action.action === "click" && action.force !== undefined) {
+      throw new UsageError(`step ${index}: click.force is browser-only and is not supported by native flows.`);
+    }
+    if (action.action === "hover") {
+      throw new UsageError(`step ${index}: hover is browser-only; macOS AX protocol v1 has no pointer-move action.`);
+    }
+    for (const spec of step.expect ?? []) {
+      if ("selector" in spec && spec.selector) {
+        throw new UsageError(`step ${index}: native flow assertions require "locator", not CSS "selector".`);
+      }
+    }
+  }
+}
+
 export async function runNativeFlowVerify(options: FlowVerifyOptions): Promise<FlowVerifyReport> {
   if (options.storageState || options.har || options.waitUntil) {
     throw new UsageError("Native flow does not accept browser storage-state/HAR/wait-until options.");
   }
+  validateNativeFlowSemantics(options);
   const artifactDir = resolve(options.artifactDir ?? ".vlmkit/native-flow");
   await mkdir(artifactDir, { recursive: true });
   const session = await openNativeInteractionSession({

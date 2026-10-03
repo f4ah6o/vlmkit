@@ -302,7 +302,7 @@ final class Agent {
     }
 
     func perform(_ params: [String: Any]) async throws -> [String: Any] {
-        let (_, window, scale) = try await currentWindow(params)
+        let (sessionValue, window, scale) = try await currentWindow(params)
         guard let action = params["action"] as? [String: Any],
               let kind = action["kind"] as? String else {
             throw fail("NATIVE_ACTION_UNSUPPORTED", "perform requires action.kind.")
@@ -374,14 +374,18 @@ final class Agent {
                 try semanticSetText(element, text: text)
             } else {
                 try semanticFocus(element)
-                try physicalText(text)
+                try physicalText(text, pid: sessionValue.app.processIdentifier)
             }
         case "key":
             guard mode == "physical", let keyCode = action["keyCode"] as? Int else {
                 throw fail("NATIVE_ACTION_UNSUPPORTED", "key requires physical mode and keyCode.")
             }
             if let element = resolved?.element { try semanticFocus(element) }
-            try physicalKey(keyCode, modifiers: action["modifiers"] as? [String] ?? [])
+            try physicalKey(
+                keyCode,
+                modifiers: action["modifiers"] as? [String] ?? [],
+                pid: sessionValue.app.processIdentifier
+            )
         case "scroll":
             guard mode == "physical" else {
                 throw fail("NATIVE_ACTION_UNSUPPORTED", "scroll currently supports physical mode only.")

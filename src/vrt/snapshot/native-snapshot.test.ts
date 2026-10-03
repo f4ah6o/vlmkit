@@ -36,6 +36,17 @@ describe("native snapshot pure contract", () => {
     assert.equal(parsed.maxNodes, 100);
   });
 
+  it("keys default labels to the selected native window", () => {
+    const auto = parseNativeSnapshotArgs(["macos:com.example.App"]);
+    const main = parseNativeSnapshotArgs(["macos:com.example.App", "--window", "main"]);
+    const focused = parseNativeSnapshotArgs(["macos:com.example.App", "--window", "focused"]);
+    const index = parseNativeSnapshotArgs(["macos:com.example.App", "--window", "index=0"]);
+    assert.notEqual(auto.label, main.label);
+    assert.notEqual(main.label, focused.label);
+    assert.notEqual(focused.label, index.label);
+    assert.match(main.label, /window-main$/);
+  });
+
   it("rejects browser-only or ambiguous native snapshot inputs", () => {
     assert.throws(() => parseNativeSnapshotArgs(["https://example.com"]), /macos:/i);
     assert.throws(() => parseNativeSnapshotArgs(["macos:one", "macos:two"]), /exactly one/i);
