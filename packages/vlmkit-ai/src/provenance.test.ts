@@ -75,4 +75,34 @@ describe("external AI provenance gate", () => {
     );
     assert.doesNotThrow(() => assertExternalAiImageAllowed(sanitized));
   });
+
+  it("refuses to declassify when sanitization is empty, invalid, outside, or byte-for-byte ineffective", () => {
+    const poison = poisonPng();
+    const input: VlmImageInput = {
+      bytes: poison,
+      mediaType: "image/png",
+      provenance: "restricted_content",
+      source: "capture",
+    };
+
+    assert.throws(() => sanitizePngForExternalAi(input, []), /at least one restricted region/);
+    assert.throws(
+      () => sanitizePngForExternalAi(input, [{ left: 0, top: 0, width: 0, height: 1 }]),
+      /width and height must be positive/,
+    );
+    assert.throws(
+      () => sanitizePngForExternalAi(input, [{ left: 99, top: 99, width: 1, height: 1 }]),
+      /must intersect the image/,
+    );
+    assert.throws(
+      () =>
+        sanitizePngForExternalAi(
+          input,
+          [{ left: 0, top: 0, width: 1, height: 1 }],
+          { fill: [255, 77, 33, 255] },
+        ),
+      /changed no pixels/,
+    );
+    assert.deepEqual(Buffer.from(input.bytes as Uint8Array), poison, "the poison input itself was never rewritten");
+  });
 });
