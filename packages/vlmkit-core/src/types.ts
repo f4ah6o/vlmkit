@@ -1,3 +1,5 @@
+import type { ContentPolicyMetadata } from "./content-provenance.ts";
+
 // ---- Playwright Report Types (subset of JSON reporter output) ----
 
 export interface PlaywrightReport {
@@ -42,6 +44,8 @@ export interface Attachment {
   contentType: string;
   path?: string;
   body?: string;
+  /** Local policy label for deciding whether this artifact may be retained or exported. */
+  contentPolicy?: ContentPolicyMetadata;
 }
 
 export interface TestError {
@@ -58,6 +62,8 @@ export interface VrtSnapshot {
   screenshotPath: string;
   baselinePath?: string;
   status: "new" | "unchanged" | "changed" | "missing";
+  /** Provenance of the captured visual artifact when the capture path knows it. */
+  contentPolicy?: ContentPolicyMetadata;
 }
 
 export interface VrtDiff {
@@ -592,4 +598,6 @@ export interface HtmlSource {
   url?: string;
   /** Label (for reports) */
   label?: string;
+  /** Provenance that browser capture adapters may propagate to produced artifacts. */
+  contentPolicy?: ContentPolicyMetadata;
 }

@@ -28,7 +28,9 @@ export type VrtConfigErrorCode =
   /** An optional runtime dependency (e.g. `@google/generative-ai`) failed to import. */
   | "MISSING_DEPENDENCY"
   /** Caller-supplied request parameters are malformed (empty prompt, out-of-range size, etc.). */
-  | "INVALID_REQUEST";
+  | "INVALID_REQUEST"
+  /** External-AI egress was blocked because content was restricted or lacked explicit provenance. */
+  | "EXTERNAL_AI_POLICY";
 
 export class VrtConfigError extends Error {
   readonly code: VrtConfigErrorCode;

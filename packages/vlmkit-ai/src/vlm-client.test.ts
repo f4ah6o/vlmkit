@@ -344,10 +344,26 @@ describe("Anthropic requests", () => {
     usage: { input_tokens: 1200, output_tokens: 80 },
   };
 
+  it("blocks unclassified and restricted images before Anthropic transport", async () => {
+    stubFetch(() => {
+      throw new Error("transport must not be reached");
+    });
+    const client = await createVlmClient(claude, { apiKey: "k" });
+    await assert.rejects(
+      () => client!.analyzeImage("POISON_DO_NOT_EGRESS", "p"),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    await assert.rejects(
+      () => client!.analyzeImage("POISON_DO_NOT_EGRESS", "p", { provenance: "restricted_content" }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(captured.length, 0);
+  });
+
   it("sends the image before the prompt, with the version header", async () => {
     stubFetch(() => ({ json: reply }));
     const client = await createVlmClient(claude, { apiKey: "k" });
-    const res = await client!.analyzeImage("BASE64IMAGE", "what changed?");
+    const res = await client!.analyzeImage("BASE64IMAGE", "what changed?", { provenance: "app_owned" });
 
     const call = captured[0]!;
     assert.equal(call.url, "https://api.anthropic.com/v1/messages");
@@ -372,12 +388,24 @@ describe("Anthropic requests", () => {
     assert.ok(res.latencyMs >= 0);
   });
 
+  it("preserves an allowed JPEG media type through the Anthropic request", async () => {
+    stubFetch(() => ({ json: reply }));
+    const client = await createVlmClient(claude, { apiKey: "k" });
+    await client!.analyzeImage("JPEGDATA", "p", { provenance: "app_owned", mediaType: "image/jpeg" });
+    const content = (captured[0]!.body.messages as { content: Record<string, unknown>[] }[])[0]!.content;
+    assert.deepEqual(content[0]!.source, { type: "base64", media_type: "image/jpeg", data: "JPEGDATA" });
+  });
+
   it("labels which screenshot is which in a diff request", async () => {
     // The labels are the whole reason a two-image request works: without them the model has two
     // unnamed images and reports the delta in an arbitrary direction.
     stubFetch(() => ({ json: reply }));
     const client = await createVlmClient(claude, { apiKey: "k" });
-    await client!.analyzeDiff("BASE", "CUR", "describe the delta", { maxTokens: 256 });
+    await client!.analyzeDiff("BASE", "CUR", "describe the delta", {
+      maxTokens: 256,
+      baselineProvenance: "app_owned",
+      currentProvenance: "app_owned",
+    });
     const content = (captured[0]!.body.messages as { content: Record<string, unknown>[] }[])[0]!.content;
     assert.deepEqual(
       content.map((c) => c.type),
@@ -395,7 +423,7 @@ describe("Anthropic requests", () => {
     const file = join(dir, "shot.png");
     writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     const client = await createVlmClient(claude, { apiKey: "k" });
-    await client!.analyzeImageFile(file, "prompt");
+    await client!.analyzeImageFile(file, "prompt", { provenance: "app_owned" });
     const content = (captured[0]!.body.messages as { content: Record<string, unknown>[] }[])[0]!.content;
     assert.equal(
       (content[0]!.source as { data: string }).data,
@@ -408,7 +436,7 @@ describe("Anthropic requests", () => {
     // as `undefined is not a function` three frames later.
     stubFetch(() => ({ status: 401, text: '{"error":{"message":"invalid x-api-key"}}' }));
     const client = await createVlmClient(claude, { apiKey: "bad" });
-    await assert.rejects(() => client!.analyzeImage("IMG", "p"), /Anthropic API error: 401.*invalid x-api-key/s);
+    await assert.rejects(() => client!.analyzeImage("IMG", "p", { provenance: "app_owned" }), /Anthropic API error: 401.*invalid x-api-key/s);
   });
 });
 
@@ -426,10 +454,22 @@ describe("OpenRouter requests", () => {
     usage: { prompt_tokens: 500, completion_tokens: 20 },
   };
 
+  it("blocks restricted images before OpenRouter transport", async () => {
+    stubFetch(() => {
+      throw new Error("transport must not be reached");
+    });
+    const client = await createVlmClient(model, { apiKey: "or-key" });
+    await assert.rejects(
+      () => client!.analyzeImage("POISON_DO_NOT_EGRESS", "p", { provenance: "restricted_content" }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(captured.length, 0);
+  });
+
   it("authorizes with a bearer token and sends a data URL", async () => {
     stubFetch(() => ({ json: reply }));
     const client = await createVlmClient(model, { apiKey: "or-key" });
-    const res = await client!.analyzeImage("IMGDATA", "what changed?");
+    const res = await client!.analyzeImage("IMGDATA", "what changed?", { provenance: "app_owned" });
     const call = captured[0]!;
     assert.equal(call.url, "https://openrouter.ai/api/v1/chat/completions");
     assert.equal((call.init!.headers as Record<string, string>).Authorization, "Bearer or-key");
@@ -443,6 +483,13 @@ describe("OpenRouter requests", () => {
     assert.equal(res.totalTokens, 520);
   });
 
+  it("preserves an allowed WebP media type in the OpenRouter data URL", async () => {
+    stubFetch(() => ({ json: reply }));
+    const client = await createVlmClient(model, { apiKey: "or-key" });
+    await client!.analyzeImage("WEBPDATA", "p", { provenance: "app_owned", mediaType: "image/webp" });
+    assert.match(JSON.stringify(captured[0]!.body), /data:image\/webp;base64,WEBPDATA/);
+  });
+
   it("prefers the provider's own total when it sends one", async () => {
     // A total that exceeds prompt+completion is not a bug to correct: a model billing reasoning
     // tokens reports them there and nowhere else.
@@ -453,14 +500,14 @@ describe("OpenRouter requests", () => {
       },
     }));
     const client = await createVlmClient(model, { apiKey: "or-key" });
-    const res = await client!.analyzeImage("IMG", "p");
+    const res = await client!.analyzeImage("IMG", "p", { provenance: "app_owned" });
     assert.equal(res.totalTokens, 700);
   });
 
   it("reports zeros rather than NaN when usage is absent entirely", async () => {
     stubFetch(() => ({ json: { choices: [{ message: { content: "ok" } }] } }));
     const client = await createVlmClient(model, { apiKey: "or-key" });
-    const res = await client!.analyzeImage("IMG", "p");
+    const res = await client!.analyzeImage("IMG", "p", { provenance: "app_owned" });
     assert.equal(res.totalTokens, 0);
     assert.equal(res.costUsd, 0);
     assert.equal(res.content, "ok", "the answer still comes back");
@@ -469,7 +516,7 @@ describe("OpenRouter requests", () => {
   it("surfaces a non-2xx as an error naming the status", async () => {
     stubFetch(() => ({ status: 429, text: "rate limited" }));
     const client = await createVlmClient(model, { apiKey: "or-key" });
-    await assert.rejects(() => client!.analyzeImage("IMG", "p"), /429/);
+    await assert.rejects(() => client!.analyzeImage("IMG", "p", { provenance: "app_owned" }), /429/);
   });
 });
 
@@ -481,11 +528,20 @@ describe("Gemini requests", () => {
     geminiReply = { text: "gemini says ok", usage: { promptTokenCount: 900, candidatesTokenCount: 40 } };
   });
 
+  it("blocks restricted images before Gemini SDK transport", async () => {
+    const client = await createVlmClient(gemini, { apiKey: "g-key" });
+    await assert.rejects(
+      () => client!.analyzeImage("POISON_DO_NOT_EGRESS", "p", { provenance: "restricted_content" }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(geminiCalls.length, 0);
+  });
+
   it("strips the `gemini:` prefix before naming the model to the SDK", async () => {
     // The prefix is vlmkit's routing marker, not part of the model id. Sending it through would
     // ask Google for a model called `gemini:gemini-2.5-flash-preview-05-20`.
     const client = await createVlmClient(gemini, { apiKey: "g-key" });
-    await client!.analyzeImage("IMGDATA", "what changed?");
+    await client!.analyzeImage("IMGDATA", "what changed?", { provenance: "app_owned" });
     assert.equal(geminiCalls.length, 1);
     assert.equal(geminiCalls[0]!.__model, gemini.id.replace("gemini:", ""));
     assert.equal(geminiCalls[0]!.__apiKey, "g-key");
@@ -493,7 +549,7 @@ describe("Gemini requests", () => {
 
   it("sends the image as inlineData ahead of the prompt", async () => {
     const client = await createVlmClient(gemini, { apiKey: "g-key" });
-    await client!.analyzeImage("IMGDATA", "what changed?", { maxTokens: 512 });
+    await client!.analyzeImage("IMGDATA", "what changed?", { maxTokens: 512, provenance: "app_owned" });
     const call = geminiCalls[0]!;
     const parts = (call.contents as { parts: Record<string, unknown>[] }[])[0]!.parts;
     assert.deepEqual(parts[0]!.inlineData, { mimeType: "image/png", data: "IMGDATA" });
@@ -501,12 +557,19 @@ describe("Gemini requests", () => {
     assert.deepEqual(call.generationConfig, { maxOutputTokens: 512 });
   });
 
+  it("preserves an allowed GIF media type in Gemini inlineData", async () => {
+    const client = await createVlmClient(gemini, { apiKey: "g-key" });
+    await client!.analyzeImage("GIFDATA", "p", { provenance: "app_owned", mediaType: "image/gif" });
+    const parts = (geminiCalls[0]!.contents as { parts: Record<string, unknown>[] }[])[0]!.parts;
+    assert.deepEqual(parts[0]!.inlineData, { mimeType: "image/gif", data: "GIFDATA" });
+  });
+
   it("maps usageMetadata onto the same cost fields as the other providers", async () => {
     // The reason this matters: `docs/reports/` benches compare providers on `costUsd` and
     // `totalTokens`, and Gemini reports usage under different field names
     // (`promptTokenCount` / `candidatesTokenCount`).
     const client = await createVlmClient(gemini, { apiKey: "g-key" });
-    const res = await client!.analyzeImage("IMG", "p");
+    const res = await client!.analyzeImage("IMG", "p", { provenance: "app_owned" });
     assert.equal(res.content, "gemini says ok");
     assert.equal(res.promptTokens, 900);
     assert.equal(res.completionTokens, 40);
@@ -521,7 +584,7 @@ describe("Gemini requests", () => {
   it("reports zero usage rather than NaN when the SDK omits it", async () => {
     geminiReply = { text: "no usage" };
     const client = await createVlmClient(gemini, { apiKey: "g-key" });
-    const res = await client!.analyzeImage("IMG", "p");
+    const res = await client!.analyzeImage("IMG", "p", { provenance: "app_owned" });
     assert.equal(res.totalTokens, 0);
     assert.equal(res.costUsd, 0);
     assert.equal(res.content, "no usage");
@@ -535,7 +598,7 @@ describe("Gemini requests", () => {
     process.env.GOOGLE_AI_API_KEY = "from-google-var";
     try {
       const client = await createVlmClient(gemini);
-      await client!.analyzeImage("IMG", "p");
+      await client!.analyzeImage("IMG", "p", { provenance: "app_owned" });
       assert.equal(geminiCalls[0]!.__apiKey, "from-google-var");
     } finally {
       if (previous === undefined) delete process.env.GOOGLE_AI_API_KEY;

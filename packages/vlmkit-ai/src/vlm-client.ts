@@ -9,6 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { VrtConfigError } from "./errors.ts";
+import { assertExternalAiAllowed, assertExternalAiImageAllowed, type ContentProvenance } from "./provenance.ts";
 
 // ---- Types ----
 
@@ -31,16 +32,58 @@ export interface VlmResponse {
   latencyMs: number;
 }
 
+export interface VlmAnalyzeOptions {
+  maxTokens?: number;
+  provenance?: ContentProvenance;
+  mediaType?: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+}
+
+export interface VlmDiffOptions {
+  maxTokens?: number;
+  baselineProvenance?: ContentProvenance;
+  currentProvenance?: ContentProvenance;
+}
+
 export interface VlmClient {
   model: VlmModel;
-  analyzeImage(imageBase64: string, prompt: string, options?: { maxTokens?: number }): Promise<VlmResponse>;
-  analyzeImageFile(imagePath: string, prompt: string, options?: { maxTokens?: number }): Promise<VlmResponse>;
-  analyzeDiff(
-    baselineBase64: string,
-    currentBase64: string,
-    prompt: string,
-    options?: { maxTokens?: number },
-  ): Promise<VlmResponse>;
+  analyzeImage(imageBase64: string, prompt: string, options?: VlmAnalyzeOptions): Promise<VlmResponse>;
+  analyzeImageFile(imagePath: string, prompt: string, options?: VlmAnalyzeOptions): Promise<VlmResponse>;
+  analyzeDiff(baselineBase64: string, currentBase64: string, prompt: string, options?: VlmDiffOptions): Promise<VlmResponse>;
+}
+
+function guardVlmClient(client: VlmClient): VlmClient {
+  return {
+    model: client.model,
+    async analyzeImage(imageBase64, prompt, options) {
+      const image = assertExternalAiImageAllowed(imageBase64, {
+        provenance: options?.provenance,
+        mediaType: options?.mediaType,
+        label: "VLM image",
+      });
+      return client.analyzeImage(image.base64, prompt, {
+        maxTokens: options?.maxTokens,
+        mediaType: image.mediaType,
+      });
+    },
+    async analyzeImageFile(imagePath, prompt, options) {
+      assertExternalAiAllowed({ provenance: options?.provenance }, "image", "VLM image file");
+      return client.analyzeImageFile(imagePath, prompt, {
+        maxTokens: options?.maxTokens,
+        mediaType: options?.mediaType,
+      });
+    },
+    async analyzeDiff(baselineBase64, currentBase64, prompt, options) {
+      const baseline = assertExternalAiImageAllowed(baselineBase64, {
+        provenance: options?.baselineProvenance,
+        label: "VLM baseline",
+      });
+      const current = assertExternalAiImageAllowed(currentBase64, {
+        provenance: options?.currentProvenance,
+        label: "VLM current",
+      });
+      return client.analyzeDiff(baseline.base64, current.base64, prompt, { maxTokens: options?.maxTokens });
+    },
+  };
 }
 
 // ---- Model discovery from OpenRouter API ----
@@ -308,7 +351,7 @@ async function createClaudeClient(model: VlmModel, apiKey: string): Promise<VlmC
     async analyzeImage(imageBase64, prompt, options) {
       return callClaude(
         [
-          { type: "image", source: { type: "base64", media_type: "image/png", data: imageBase64 } },
+          { type: "image", source: { type: "base64", media_type: options?.mediaType ?? "image/png", data: imageBase64 } },
           { type: "text", text: prompt },
         ],
         options?.maxTokens ?? 1024,
@@ -348,13 +391,18 @@ async function createGeminiClient(model: VlmModel, apiKey: string): Promise<VlmC
   const genAI = new GoogleGenerativeAI(apiKey);
   const genModel = genAI.getGenerativeModel({ model: geminiModelId });
 
-  async function callGemini(imageBase64: string, textPrompt: string, maxTokens: number): Promise<VlmResponse> {
+  async function callGemini(
+    imageBase64: string,
+    textPrompt: string,
+    maxTokens: number,
+    mediaType: VlmAnalyzeOptions["mediaType"] = "image/png",
+  ): Promise<VlmResponse> {
     const start = Date.now();
     const result = await genModel.generateContent({
       contents: [
         {
           role: "user",
-          parts: [{ inlineData: { mimeType: "image/png", data: imageBase64 } }, { text: textPrompt }],
+          parts: [{ inlineData: { mimeType: mediaType, data: imageBase64 } }, { text: textPrompt }],
         },
       ],
       generationConfig: { maxOutputTokens: maxTokens },
@@ -383,7 +431,7 @@ async function createGeminiClient(model: VlmModel, apiKey: string): Promise<VlmC
   const client: VlmClient = {
     model,
     async analyzeImage(imageBase64, prompt, options) {
-      return callGemini(imageBase64, prompt, options?.maxTokens ?? 1024);
+      return callGemini(imageBase64, prompt, options?.maxTokens ?? 1024, options?.mediaType);
     },
     async analyzeImageFile(imagePath, prompt, options) {
       const buf = await readFile(imagePath);
@@ -457,7 +505,7 @@ export async function createVlmClient(model: VlmModel, options?: CreateVlmClient
       }
       return null;
     }
-    return createGeminiClient(model, key);
+    return guardVlmClient(await createGeminiClient(model, key));
   }
 
   // Anthropic (Claude) direct
@@ -469,7 +517,7 @@ export async function createVlmClient(model: VlmModel, options?: CreateVlmClient
       }
       return null;
     }
-    return createClaudeClient(model, key);
+    return guardVlmClient(await createClaudeClient(model, key));
   }
 
   // OpenRouter
@@ -543,7 +591,10 @@ export async function createVlmClient(model: VlmModel, options?: CreateVlmClient
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:image/png;base64,${imageBase64}` } },
+              {
+                type: "image_url",
+                image_url: { url: `data:${options?.mediaType ?? "image/png"};base64,${imageBase64}` },
+              },
               { type: "text", text: prompt },
             ],
           },
@@ -575,5 +626,5 @@ export async function createVlmClient(model: VlmModel, options?: CreateVlmClient
       );
     },
   };
-  return orClient;
+  return guardVlmClient(orClient);
 }

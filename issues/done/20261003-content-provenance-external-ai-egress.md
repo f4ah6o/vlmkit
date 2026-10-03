@@ -1,8 +1,10 @@
 # Content provenance and fail-closed external-AI egress gate
 
-Status: design / open
+Status: done
 Date: 2026-10-03
 Scope: this fork; generic VLMKit capability
+
+Completion note: implemented and review-approved in PR #1. GitHub did not start PR-triggered workflow runs for the final implementation HEAD, so CI execution was not available as a merge gate.
 
 ## Goal
 

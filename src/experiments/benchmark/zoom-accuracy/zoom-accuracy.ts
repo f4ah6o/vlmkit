@@ -92,8 +92,8 @@ async function ask(
 ): Promise<SavedAnswer> {
   const driver = createZoomDriver(model);
   const images = [
-    { png: await readFile(c.baselinePath), label: "Baseline" },
-    { png: await readFile(c.currentPath), label: "Current" },
+    { png: await readFile(c.baselinePath), label: "Baseline", provenance: "app_owned" as const },
+    { png: await readFile(c.currentPath), label: "Current", provenance: "app_owned" as const },
   ];
   const prompt = buildPrompt(c);
   const start = Date.now();

@@ -60,14 +60,17 @@ describe("Cloudflare Quick Actions", () => {
       url: "https://example.com",
       viewport: { width: 1280, height: 720 },
       screenshotOptions: { fullPage: true },
+      provenance: "restricted_content",
     });
 
     assert.equal(calls[0]?.url, "https://api.cloudflare.com/client/v4/accounts/account/browser-rendering/screenshot");
     assert.equal(calls[0]?.init.method, "POST");
     assert.equal((calls[0]?.init.headers as Record<string, string>).Authorization, "Bearer token");
+    assert.doesNotMatch(String(calls[0]?.init.body), /provenance|restricted_content/);
     assert.deepEqual(new Uint8Array(result.bytes), new Uint8Array([1, 2, 3]));
     assert.equal(result.contentType, "image/png");
     assert.equal(result.browserMsUsed, 42);
+    assert.deepEqual(result.contentPolicy, { provenance: "restricted_content", source: "capture" });
   });
 
   it("starts crawl jobs and extracts route candidates from crawl records", async () => {

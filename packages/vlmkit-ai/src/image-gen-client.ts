@@ -24,6 +24,7 @@
  * `editImage` method if/when a caller needs it.
  */
 import { VrtConfigError } from "./errors.ts";
+import { assertExternalAiAllowed, type ContentProvenance } from "./provenance.ts";
 
 // ---- Types ----
 
@@ -45,6 +46,11 @@ export interface ImageGenModel {
   costPer1MOutputImageTokens: number;
 }
 
+export interface ImageGenInputReference {
+  url: string;
+  provenance: ContentProvenance;
+}
+
 export interface ImageGenRequest {
   prompt: string;
   size?: ImageGenSize;
@@ -59,7 +65,7 @@ export interface ImageGenRequest {
    * `data:` URLs. Sent as `input_references`, which takes chat-style `image_url` parts (a bare
    * string or `{ url }` is a 400).
    */
-  inputReferences?: string[];
+  inputReferences?: Array<string | ImageGenInputReference>;
 }
 
 export interface ImageGenUsage {
@@ -212,7 +218,7 @@ export function buildOpenRouterBody(model: ImageGenModel, req: ImageGenRequest):
     ...(req.quality ? { quality: req.quality } : {}),
     ...(req.background ? { background: req.background } : {}),
     ...(req.inputReferences?.length
-      ? { input_references: req.inputReferences.map((url) => ({ type: "image_url" as const, image_url: { url } })) }
+      ? { input_references: req.inputReferences.map((reference) => ({ type: "image_url" as const, image_url: { url: typeof reference === "string" ? reference : reference.url } })) }
       : {}),
   };
 }
@@ -297,6 +303,9 @@ export function createImageGenClient(
   return {
     model,
     async generate(req: ImageGenRequest): Promise<ImageGenResponse> {
+      for (const reference of req.inputReferences ?? []) {
+        assertExternalAiAllowed(typeof reference === "string" ? {} : reference, "image", "image-gen input reference");
+      }
       const body = openRouter ? buildOpenRouterBody(model, req) : buildGenerationBody(model, req);
       const started = Date.now();
       const res = await fetch(`${baseUrl}${path}`, {

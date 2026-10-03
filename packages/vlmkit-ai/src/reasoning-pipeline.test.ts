@@ -142,10 +142,36 @@ describe("stage 1 — VLM reply to a structured report", () => {
     process.env.OPENROUTER_API_KEY = "or-key";
   });
 
+  it("blocks an unclassified screenshot before the provider request", async () => {
+    serve([recorded("stage1-openrouter")]);
+    const pipeline = createReasoningPipeline()!;
+    await assert.rejects(
+      () => pipeline.analyze({ heatmapBase64: PIXEL }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls.filter((call) => !call.url.includes("/models")).length, 0);
+  });
+
+  it("blocks restricted textReport before any VLM transport", async () => {
+    serve([recorded("stage1-openrouter")]);
+    const pipeline = createReasoningPipeline()!;
+    await assert.rejects(
+      () =>
+        pipeline.analyze({
+          heatmapBase64: PIXEL,
+          contentProvenance: "app_owned",
+          textReport: "POISON_DO_NOT_EGRESS",
+          textReportProvenance: "restricted_content",
+        }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls.length, 0);
+  });
+
   it("parses the CHANGE lines, deduplicates, and reads SUMMARY / REGRESSION", async () => {
     serve([recorded("stage1-openrouter")]);
     const pipeline = createReasoningPipeline()!;
-    const report = await pipeline.analyze({ heatmapBase64: PIXEL });
+    const report = await pipeline.analyze({ heatmapBase64: PIXEL, contentProvenance: "app_owned" });
 
     // Four CHANGE lines, three distinct element+property pairs — the fourth repeats the first
     // with `#fff` instead of `#f6f8fa`, and a duplicate that changes the VALUE must not become a
@@ -170,7 +196,7 @@ describe("stage 1 — VLM reply to a structured report", () => {
     // report nothing found — a fabricated change is worse than an empty list, because stage 2
     // would then write CSS for it.
     serve([recorded("stage1-prose-only")]);
-    const report = await createReasoningPipeline()!.analyze({ heatmapBase64: PIXEL });
+    const report = await createReasoningPipeline()!.analyze({ heatmapBase64: PIXEL, contentProvenance: "app_owned" });
     assert.deepEqual(report.changes, []);
     assert.equal(report.summary, "");
     assert.equal(report.regression, false);
@@ -182,7 +208,7 @@ describe("stage 1 — VLM reply to a structured report", () => {
     // which one was sent is worth pinning.
     serve([recorded("stage1-openrouter")]);
     const pipeline = createReasoningPipeline()!;
-    await pipeline.analyze({ selectorCropBase64: PIXEL, heatmapBase64: PIXEL, currentBase64: PIXEL });
+    await pipeline.analyze({ selectorCropBase64: PIXEL, heatmapBase64: PIXEL, currentBase64: PIXEL, contentProvenance: "app_owned" });
     const sent = JSON.stringify(calls.filter((c) => !c.url.includes("/models"))[0]!.body);
     assert.match(sent, /data:image\/png;base64,/);
   });
@@ -190,7 +216,11 @@ describe("stage 1 — VLM reply to a structured report", () => {
   it("refuses to analyze with no image at all", async () => {
     serve([recorded("stage1-openrouter")]);
     await assert.rejects(
-      () => createReasoningPipeline()!.analyze({ textReport: "something changed" }),
+      () =>
+        createReasoningPipeline()!.analyze({
+          textReport: "something changed",
+          textReportProvenance: "app_owned",
+        }),
       /No image data provided/,
     );
   });
@@ -199,11 +229,29 @@ describe("stage 1 — VLM reply to a structured report", () => {
     serve([recorded("stage1-openrouter")]);
     await createReasoningPipeline()!.analyze({
       heatmapBase64: PIXEL,
+      contentProvenance: "app_owned",
       shiftInfo: { globalShift: 12, shiftOnly: true, compensatedDiffRatio: 0.001, contentChangeCount: 0 },
     });
     const sent = JSON.stringify(calls.filter((c) => !c.url.includes("/models"))[0]!.body);
     assert.match(sent, /Global vertical shift/);
     assert.match(sent, /SHIFT ONLY/, "the instruction that redirects it to layout properties");
+  });
+});
+
+describe("stage 1 — LLM-only fallback provenance", () => {
+  it("blocks restricted textReport before fallback transport", async () => {
+    process.env.ANTHROPIC_API_KEY = "anthropic-key";
+    serve([recorded("stage1-openrouter")]);
+    const pipeline = createReasoningPipeline({ llmProvider: "anthropic" })!;
+    await assert.rejects(
+      () =>
+        pipeline.analyze({
+          textReport: "POISON_DO_NOT_EGRESS",
+          textReportProvenance: "restricted_content",
+        }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls.length, 0);
   });
 });
 
@@ -215,7 +263,7 @@ describe("stage 2 — report to CSS fixes", () => {
   it("parses FIX lines with their reason, and the confidence", async () => {
     serve([recorded("stage1-openrouter"), recorded("stage2-openrouter")]);
     const pipeline = createReasoningPipeline()!;
-    const analysis = await pipeline.analyze({ heatmapBase64: PIXEL });
+    const analysis = await pipeline.analyze({ heatmapBase64: PIXEL, contentProvenance: "app_owned" });
     const fix = await pipeline.suggestFix(analysis, ".readme-body pre { }");
     assert.deepEqual(
       fix.fixes.map((f) => `${f.selector} ${f.property}: ${f.value}`),
@@ -229,7 +277,7 @@ describe("stage 2 — report to CSS fixes", () => {
   it("returns no fixes for a prose answer instead of guessing at one", async () => {
     serve([recorded("stage1-openrouter"), recorded("stage2-unparseable")]);
     const pipeline = createReasoningPipeline()!;
-    const analysis = await pipeline.analyze({ heatmapBase64: PIXEL });
+    const analysis = await pipeline.analyze({ heatmapBase64: PIXEL, contentProvenance: "app_owned" });
     const fix = await pipeline.suggestFix(analysis, ".readme-body pre { }");
     assert.deepEqual(fix.fixes, []);
     assert.equal(fix.confidence, "medium", "the default, since the reply named none");
@@ -246,6 +294,7 @@ describe("analyzeAndFix — the escalation ladder", () => {
     serve([recorded("stage1-openrouter"), recorded("stage2-openrouter")]);
     const result = await createReasoningPipeline()!.analyzeAndFix({
       heatmapBase64: PIXEL,
+      contentProvenance: "app_owned",
       cssSource: ".readme-body pre { }",
     });
     assert.equal(result.escalated, false, "confidence is high — a second pass would just cost money");
@@ -270,6 +319,7 @@ describe("analyzeAndFix — the escalation ladder", () => {
     serve([oneChange, lowConf]);
     const result = await createReasoningPipeline({ resolution: "medium", maxResolution: "high" })!.analyzeAndFix({
       heatmapBase64: PIXEL,
+      contentProvenance: "app_owned",
       cssSource: ".a { }",
       highResHeatmapBase64: PIXEL,
     });
@@ -290,6 +340,7 @@ describe("analyzeAndFix — the escalation ladder", () => {
     serve([oneChange, lowConf]);
     const atCeiling = await createReasoningPipeline({ resolution: "high", maxResolution: "high" })!.analyzeAndFix({
       heatmapBase64: PIXEL,
+      contentProvenance: "app_owned",
       cssSource: ".a { }",
     });
     assert.equal(atCeiling.escalated, false, "already at the ceiling");
@@ -298,6 +349,7 @@ describe("analyzeAndFix — the escalation ladder", () => {
     serve([oneChange, lowConf]);
     const off = await createReasoningPipeline({ adaptiveResolution: false, resolution: "low" })!.analyzeAndFix({
       heatmapBase64: PIXEL,
+      contentProvenance: "app_owned",
       cssSource: ".a { }",
     });
     assert.equal(off.escalated, false);
@@ -318,6 +370,7 @@ describe("analyzeAndFix — the escalation ladder", () => {
     serve([oneChange, lowConf]);
     const result = await createReasoningPipeline({ resolution: "low" })!.analyzeAndFix({
       currentBase64: PIXEL,
+      contentProvenance: "app_owned",
       cssSource: ".a { }",
     });
     assert.equal(result.escalated, false);

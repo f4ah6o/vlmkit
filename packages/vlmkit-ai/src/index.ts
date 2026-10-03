@@ -9,6 +9,20 @@
 // ---- Errors ----
 export { VrtConfigError, type VrtConfigErrorCode } from "./errors.ts";
 
+// ---- Content provenance / external-AI egress ----
+export {
+  assertExternalAiAllowed,
+  assertExternalAiImageAllowed,
+  assertExternalAiMessageAllowed,
+  normalizeImageInput,
+  sanitizePngForExternalAi,
+  type ContentProvenance,
+  type ContentSource,
+  type VlmImageInput,
+  type VlmTextInput,
+  type RestrictedRegion,
+} from "./provenance.ts";
+
 // ---- LLM clients ----
 export {
   createUnifiedLLMClient,
@@ -37,6 +51,8 @@ export {
   type VlmClient,
   type VlmModel,
   type VlmResponse,
+  type VlmAnalyzeOptions,
+  type VlmDiffOptions,
 } from "./vlm-client.ts";
 
 // ---- Image generation clients ----
@@ -57,6 +73,7 @@ export {
   type ImageGenOutputFormat,
   type ImageGenQuality,
   type ImageGenRequest,
+  type ImageGenInputReference,
   type ImageGenRequestBody,
   type ImageGenResponse,
   type ImageGenSize,

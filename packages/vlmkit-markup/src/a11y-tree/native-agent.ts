@@ -4,6 +4,11 @@ import { createInterface } from "node:readline";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { UsageError } from "@mizchi/vlmkit-core/cli-error.ts";
+import {
+  contentPolicyMetadata,
+  type ContentPolicyMetadata,
+  type ContentProvenance,
+} from "@mizchi/vlmkit-core/content-provenance.ts";
 import { decodePng } from "@mizchi/vlmkit-core/png-utils.ts";
 import { parseA11yTree, type A11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 
@@ -110,6 +115,7 @@ export interface NativeCaptureResult {
   counts: { nodes: number; truncated: number; attributeErrors: number };
   transform: { globalWindowOriginPoints: { x: number; y: number }; logicalToPixelScale: number };
   diagnostics: Array<{ code: string; [key: string]: unknown }>;
+  contentPolicy: ContentPolicyMetadata;
 }
 export class NativeAgentError extends UsageError {
   readonly code: string;
@@ -335,9 +341,10 @@ export async function captureNativeSession(
     pngPath: string;
     maxDepth?: number;
     maxNodes?: number;
+    provenance?: ContentProvenance;
   },
 ): Promise<{ tree: A11yTree; capture: NativeCaptureResult }> {
-  const capture = await client.request<NativeCaptureResult>("snapshot.capture", {
+  const agentCapture = await client.request<Omit<NativeCaptureResult, "contentPolicy">>("snapshot.capture", {
     sessionId,
     windowId,
     outputTreePath: resolve(options.treePath),
@@ -345,6 +352,10 @@ export async function captureNativeSession(
     maxDepth: options.maxDepth,
     maxNodes: options.maxNodes,
   });
+  const capture: NativeCaptureResult = {
+    ...agentCapture,
+    contentPolicy: contentPolicyMetadata(options.provenance ?? "unclassified", "capture"),
+  };
   const tree = parseA11yTree(await readFile(capture.treePath, "utf8"));
   const pixels = await decodePng(capture.pngPath);
   if (
@@ -428,6 +439,8 @@ export async function captureNativeA11y(options: {
   maxDepth?: number;
   maxNodes?: number;
   timeout?: number;
+  /** Local policy label attached to the produced semantic tree + screenshot. */
+  provenance?: ContentProvenance;
 }): Promise<{ tree: A11yTree; capture: NativeCaptureResult }> {
   if (process.platform !== "darwin") throw new UsageError("Native macOS scan requires a macOS host.");
   const executable = nativeAgentExecutable(options.agent);
@@ -450,6 +463,7 @@ export async function captureNativeA11y(options: {
       pngPath: options.frame,
       maxDepth: options.maxDepth,
       maxNodes: options.maxNodes,
+      provenance: options.provenance,
     });
   } finally {
     if (sessionId) await client.request("session.close", { sessionId }).catch(() => {});
