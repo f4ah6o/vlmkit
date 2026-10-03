@@ -77,11 +77,15 @@ extension MappingTests {
         XCTAssertEqual(action["textLength"] as? Int, "POISON_DO_NOT_LOG".utf16.count)
     }
 
-    func testDuplicateRoleNameLocatorIsAmbiguousBeforeAction() throws {
-        let root = AXUIElementCreateSystemWide()
-        XCTAssertThrowsError(
-            try resolveLocator(root, origin: .zero, locator: ["by": "role-name", "role": "button", "name": "missing"])
-        ) {
+    func testLocatorSelectionFailsClosedOnMissingAndAmbiguousCandidates() {
+        XCTAssertThrowsError(try chooseLocatorCandidate([String]())) {
+            XCTAssertEqual(($0 as? NativeError)?.code, "NATIVE_LOCATOR_NOT_FOUND")
+        }
+        XCTAssertThrowsError(try chooseLocatorCandidate(["first", "second"])) {
+            XCTAssertEqual(($0 as? NativeError)?.code, "NATIVE_LOCATOR_AMBIGUOUS")
+        }
+        XCTAssertEqual(try chooseLocatorCandidate(["first", "second"], nth: 1), "second")
+        XCTAssertThrowsError(try chooseLocatorCandidate(["first", "second"], nth: 2)) {
             XCTAssertEqual(($0 as? NativeError)?.code, "NATIVE_LOCATOR_NOT_FOUND")
         }
     }

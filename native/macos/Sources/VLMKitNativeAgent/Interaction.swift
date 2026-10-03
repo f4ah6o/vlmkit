@@ -99,6 +99,27 @@ struct NativeResolvedElement {
     let descriptor: [String: Any]
 }
 
+func chooseLocatorCandidate<T>(_ candidates: [T], nth: Int? = nil) throws -> T {
+    if let nth {
+        guard nth >= 0, candidates.indices.contains(nth) else {
+            throw NativeError(
+                code: "NATIVE_LOCATOR_NOT_FOUND",
+                message: "Locator nth does not identify an existing candidate.",
+                details: ["candidateCount": candidates.count, "nth": nth]
+            )
+        }
+        return candidates[nth]
+    }
+    guard candidates.count == 1 else {
+        throw NativeError(
+            code: candidates.isEmpty ? "NATIVE_LOCATOR_NOT_FOUND" : "NATIVE_LOCATOR_AMBIGUOUS",
+            message: candidates.isEmpty ? "Locator did not match any element." : "Locator matched multiple elements.",
+            details: ["candidateCount": candidates.count]
+        )
+    }
+    return candidates[0]
+}
+
 func collectElements(_ root: AXUIElement, origin: CGPoint, maxNodes: Int = 10000) -> [NativeResolvedElement] {
     let reader = AXReader()
     var result: [NativeResolvedElement] = []
@@ -136,19 +157,17 @@ func pathForElement(_ root: AXUIElement, target: AXUIElement, origin: CGPoint) -
 func resolveLocator(_ root: AXUIElement, origin: CGPoint, locator: [String: Any]) throws -> NativeResolvedElement {
     let all = collectElements(root, origin: origin)
     let by = locator["by"] as? String
-    let matches: [NativeResolvedElement]
-
     switch by {
     case "stable-id":
         guard let value = locator["value"] as? String, !value.isEmpty else {
             throw fail("NATIVE_LOCATOR_NOT_FOUND", "stable-id locator requires a non-empty value.")
         }
-        matches = all.filter { ($0.descriptor["identifier"] as? String) == value }
+        return try chooseLocatorCandidate(all.filter { ($0.descriptor["identifier"] as? String) == value })
     case "path":
         guard let value = locator["value"] as? String, !value.isEmpty else {
             throw fail("NATIVE_LOCATOR_NOT_FOUND", "path locator requires a non-empty value.")
         }
-        matches = all.filter { $0.path == value }
+        return try chooseLocatorCandidate(all.filter { $0.path == value })
     case "role-name":
         guard let role = locator["role"] as? String, let name = locator["name"] as? String else {
             throw fail("NATIVE_LOCATOR_NOT_FOUND", "role-name locator requires role and name.")
@@ -156,27 +175,10 @@ func resolveLocator(_ root: AXUIElement, origin: CGPoint, locator: [String: Any]
         let candidates = all.filter {
             ($0.descriptor["role"] as? String) == role && ($0.descriptor["name"] as? String) == name
         }
-        if let nth = locator["nth"] as? Int {
-            guard nth >= 0, candidates.indices.contains(nth) else {
-                throw fail("NATIVE_LOCATOR_NOT_FOUND", "role-name nth does not identify an existing candidate.")
-            }
-            matches = [candidates[nth]]
-        } else {
-            matches = candidates
-        }
+        return try chooseLocatorCandidate(candidates, nth: locator["nth"] as? Int)
     default:
         throw fail("NATIVE_LOCATOR_NOT_FOUND", "Expected stable-id, role-name, or path locator.")
     }
-
-    guard matches.count == 1 else {
-        let code = matches.isEmpty ? "NATIVE_LOCATOR_NOT_FOUND" : "NATIVE_LOCATOR_AMBIGUOUS"
-        throw NativeError(
-            code: code,
-            message: matches.isEmpty ? "Locator did not match any element." : "Locator matched multiple elements.",
-            details: ["candidateCount": matches.count]
-        )
-    }
-    return matches[0]
 }
 
 func hitElement(_ application: AXUIElement, point: CGPoint) throws -> AXUIElement {
