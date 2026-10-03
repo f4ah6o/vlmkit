@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 Dates are YYYY-MM-DD.
 
+## Unreleased
+
+- Add native macOS `scan a11y macos:<bundle-id|pid=N|/path/App.app>` with a local
+  Swift AX/ScreenCaptureKit observer (macOS 14+), passive permission diagnostics,
+  explicit launch/window selection, native-resolution PNGs, and incomplete-tree
+  reporting. See [native setup](native/macos/README.md).
+- Preserve optional native accessibility identifiers, roles and subroles in
+  `vlmkit-a11y/1`; existing tree judges consume native artifacts unchanged.
+
 ## 0.23.2 — 2026-10-02
 
 - Add `check animation --virtual-time`: the page clock (`requestAnimationFrame`, `performance.now`, `Date`,

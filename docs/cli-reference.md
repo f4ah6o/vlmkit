@@ -999,9 +999,10 @@ vlmkit scan component <screenshot.png>         # Crop to standalone PNGs
   # --min-area <px>      min filled px per component (default 200)
   # --preset game-ui     = --min-area 24 --top-n 24, for small high-contrast frames
 vlmkit scan breakpoints <html-file>            # Discover responsive breakpoints
-vlmkit scan a11y <url|dump.xml> [--out a11y.json] # A platform's accessibility tree + frame as vlmkit-a11y/1:
+vlmkit scan a11y <url|dump.xml|macos:target> [--out a11y.json] # A platform's accessibility tree + frame as vlmkit-a11y/1:
                                                # Flutter web (semantics switched on, --click to reach a
-                                               # screen) or an Android uiautomator dump (--density dpi)
+                                               # screen), Android uiautomator dump (--density dpi), or macOS AX
+                                               # (--native-agent path; --launch; --window main|focused|index=N)
 vlmkit scan style <html|url> [--out snap.json] # One page load for check design / composition / color; then
                                                # `vlmkit check design|composition|color --from snap.json`
                                                # judges it with no browser, same report as the live run

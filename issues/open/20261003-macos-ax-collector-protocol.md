@@ -769,3 +769,22 @@ The first code packet should stop after:
 - coordinate overlay acceptance.
 
 Do not include native click, typing, grounding replay, interactions, or flow in that same packet.
+
+## P0 implementation — 2026-10-03
+
+Model: unknown
+
+P0A/P0B and the native scan vertical slice are implemented in `native/macos/`
+and `packages/vlmkit-markup/src/a11y-tree/native-agent.ts`. The observer requires
+macOS 14+, uses a stable app bundle identity, and implements protocol 1 over
+stdio. The CLI accepts `macos:` targets and reports partial traversal. Generic
+judges remain platform-independent.
+
+The coordinate decision is refined by the collector protocol: **full selected
+window bounds including title bar**, shadow excluded, top-left local logical
+points; not an AppKit content-only crop. Recorded 2x fixture output and an actual
+Save pixel/rect check verify this decision.
+
+Validation and limitations:
+[2026-10-03 native observer acceptance](../../docs/reports/2026-10-03-native-observer-p0.md).
+These parent designs remain open for the later native driver/GPUI phases.

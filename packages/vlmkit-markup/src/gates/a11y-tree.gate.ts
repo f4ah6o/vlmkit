@@ -3,7 +3,7 @@
  * collected once, then judged with no browser. Measurement lives in `../a11y-tree/`, the
  * judging in `@mizchi/vlmkit-judge/a11y-tree.ts`.
  */
-import { readAll, readChoice, readFlag } from "@mizchi/vlmkit-core/arg-reader.ts";
+import { hasFlag, readAll, readChoice, readFlag } from "@mizchi/vlmkit-core/arg-reader.ts";
 import { PAGE_LOAD_INPUTS, parsePageLoad } from "@mizchi/vlmkit-core/page-load.ts";
 import { defineGate } from "@mizchi/vlmkit-core/plugin/contract.ts";
 import type { Finding, RuleView } from "@mizchi/vlmkit-core/plugin/contract.ts";
@@ -27,6 +27,15 @@ const semanticsEmpty = (report: ScanA11yReport): string | null =>
 
 function formatScanA11y(report: ScanA11yReport, rules?: RuleView): string {
   const issues = [
+    ...(report.native && (report.native.counts.truncated > 0 || report.native.counts.attributeErrors > 0)
+      ? [
+          {
+            kind: "native-incomplete",
+            severity: "suspect" as const,
+            message: `Native tree is incomplete: ${report.native.counts.truncated} truncated, ${report.native.counts.attributeErrors} attribute errors.`,
+          },
+        ]
+      : []),
     ...(report.redirect ? [{ kind: "redirected", severity: "suspect" as const, message: report.redirect }] : []),
     ...(semanticsEmpty(report)
       ? [{ kind: "semantics-empty", severity: "suspect" as const, message: semanticsEmpty(report)! }]
@@ -41,6 +50,12 @@ function formatScanA11y(report: ScanA11yReport, rules?: RuleView): string {
     `tree:  ${report.out}  (${report.viewport.width}x${report.viewport.height})`,
     `frame: ${report.frame ?? `${DIM}none — contrast will not be measured (pass --frame)${RESET}`}`,
     `  ${report.counts.nodes} node(s), ${report.counts.named} named, ${report.counts.interactive} operable`,
+    ...(report.native
+      ? [
+          `  native traversal: ${report.native.counts.truncated} truncated, ${report.native.counts.attributeErrors} attribute errors`,
+          ...report.native.diagnostics.map((d) => `${YELLOW}! ${d.code}: ${JSON.stringify(d)}${RESET}`),
+        ]
+      : []),
     ...shown.map(
       ({ row, tier }) =>
         `\n${YELLOW}! [${row.kind}]${tier === row.severity ? "" : ` (re-tuned to ${tier})`} ${row.message}${RESET}`,
@@ -56,7 +71,7 @@ function formatScanA11y(report: ScanA11yReport, rules?: RuleView): string {
 export const a11yScanGate = defineGate<ScanA11yReport, ScanA11yOptions>({
   id: "scan.a11y",
   command: ["scan", "a11y"],
-  title: "Accessibility tree snapshot (Flutter web, Android)",
+  title: "Accessibility tree snapshot (Flutter web, Android, macOS)",
   summary: "Write a platform's accessibility tree and its frame for check a11y tree",
   category: "correctness",
   usage: `Collects an accessibility tree as vlmkit-a11y/1 JSON plus the frame it was
@@ -75,10 +90,17 @@ painted into, from a platform with no DOM to read paint from:
     vlmkit scan a11y ui.xml --density $(adb shell wm density | grep -o '[0-9]*$') --frame frame.png --out a11y.json
   Bounds become dp, the unit WCAG's target floors mean on Android.
 
-Any other platform (macOS AX, Windows UIA, iOS, a Flutter desktop semantics
+macOS (observer only; macOS 14+)
+    vlmkit scan a11y macos:com.example.app --native-agent /path/VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent --out a11y.json
+    vlmkit scan a11y macos:pid=123 --window main --out a11y.json
+  Permissions are checked passively. --launch opts into launching a target.
+  Captures full window bounds without shadows, in local logical points.
+
+Any other platform (Windows UIA, iOS, a Flutter desktop semantics
 dump) writes the same JSON with its own tool — docs/a11y-tree.md has the
 contract. Then: vlmkit check a11y tree a11y.json`,
   rules: [
+    { id: "native-incomplete", title: "Native traversal is incomplete", severity: "suspect" },
     { id: "redirected", title: "Requested URL redirected elsewhere", severity: "suspect" },
     {
       id: "semantics-empty",
@@ -90,9 +112,9 @@ contract. Then: vlmkit check a11y tree a11y.json`,
   inputs: [
     {
       name: "source",
-      placeholder: "url|page.html|dump.xml",
+      placeholder: "url|page.html|dump.xml|macos:target",
       kind: "path-or-url",
-      description: "Flutter web page, or a uiautomator dump",
+      description: "Flutter web page, uiautomator dump, or macos: target",
       positional: 0,
       required: true,
     },
@@ -107,7 +129,7 @@ contract. Then: vlmkit check a11y tree a11y.json`,
       name: "frame",
       placeholder: "frame.png",
       kind: "path",
-      description: "Page: where to write the screenshot. Dump: the screenshot taken with it",
+      description: "Page/native: where to write the screenshot. Dump: the screenshot taken with it",
       defaultDescription: "page: beside --out",
     },
     {
@@ -143,10 +165,15 @@ contract. Then: vlmkit check a11y tree a11y.json`,
       kind: "path",
       description: "Playwright storage state for pages behind a login",
     },
+    { name: "native-agent", kind: "path", description: "macOS observer executable (or VLMKIT_NATIVE_AGENT)" },
+    { name: "launch", kind: "boolean", description: "Launch native target if it is not running" },
+    { name: "window", kind: "string", description: "Native window: main, focused, index=N, or window ID" },
+    { name: "max-depth", kind: "number", description: "Native traversal depth bound", defaultDescription: "64" },
+    { name: "max-nodes", kind: "number", description: "Native traversal node bound", defaultDescription: "10000" },
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
-    const source = firstPositional(argv, "vlmkit scan a11y <url|page.html|dump.xml> [--out a11y.json]", [
+    const source = firstPositional(argv, "vlmkit scan a11y <url|page.html|dump.xml|macos:target> [--out a11y.json]", [
       "--out",
       "--frame",
       "--viewport",
@@ -154,7 +181,29 @@ contract. Then: vlmkit check a11y tree a11y.json`,
       "--density",
       "--locale",
       "--storage-state",
+      "--native-agent",
+      "--window",
+      "--max-depth",
+      "--max-nodes",
     ]);
+    const bounded = (name: string, min: number, max: number) => {
+      const raw = readFlag(argv, name);
+      if (raw === undefined) return undefined;
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value < min || value > max)
+        throw new UsageError(`--${name} expects an integer ${min}..${max}.`);
+      return value;
+    };
+    const nativeAgent = readFlag(argv, "native-agent");
+    const window = readFlag(argv, "window");
+    const maxDepth = bounded("max-depth", 0, 256);
+    const maxNodes = bounded("max-nodes", 1, 100000);
+    const launch = hasFlag(argv, "launch");
+    if (
+      !source.startsWith("macos:") &&
+      (nativeAgent || window || maxDepth !== undefined || maxNodes !== undefined || launch)
+    )
+      throw new UsageError("Native options require a macos: source.");
     const densityRaw = readFlag(argv, "density");
     const density = densityRaw === undefined ? undefined : Number(densityRaw);
     if (density !== undefined && !(density > 0))
@@ -166,6 +215,11 @@ contract. Then: vlmkit check a11y tree a11y.json`,
     const locale = readFlag(argv, "locale");
     return {
       source,
+      ...(nativeAgent ? { nativeAgent } : {}),
+      ...(window ? { window } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(maxNodes !== undefined ? { maxNodes } : {}),
+      ...(launch ? { launch } : {}),
       out: readFlag(argv, "out") ?? DEFAULT_A11Y_TREE,
       ...(locale ? { locale } : {}),
       ...(frame ? { frame } : {}),
@@ -178,6 +232,15 @@ contract. Then: vlmkit check a11y tree a11y.json`,
   },
   run: (options) => runScanA11y(options),
   findings: (report): Finding[] => [
+    ...(report.native && (report.native.counts.truncated > 0 || report.native.counts.attributeErrors > 0)
+      ? [
+          {
+            rule: "native-incomplete",
+            severity: "suspect" as const,
+            message: `Native tree is incomplete: ${report.native.counts.truncated} truncated, ${report.native.counts.attributeErrors} attribute errors.`,
+          },
+        ]
+      : []),
     ...(report.redirect ? [{ rule: "redirected", severity: "suspect" as const, message: report.redirect }] : []),
     ...(semanticsEmpty(report)
       ? [{ rule: "semantics-empty", severity: "suspect" as const, message: semanticsEmpty(report)! }]
@@ -287,7 +350,7 @@ export const a11yTreeGate = defineGate<CheckA11yTreeReport, CheckA11yTreeOptions
   summary: "Names, reach, pixel contrast and target size, judged from an accessibility tree and its frame",
   category: "correctness",
   usage: `Judges a vlmkit-a11y/1 tree — written by \`vlmkit scan a11y\` (Flutter web,
-Android) or by any other platform's tool — and the frame it was painted into.
+Android, macOS) or by any other platform's tool — and the frame it was painted into.
 No browser, no DOM: every rule reads roles, names, rects and states from the
 tree, and paint from the frame's pixels.
 

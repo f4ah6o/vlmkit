@@ -2,12 +2,14 @@
  * `vlmkit scan a11y`: write a platform's accessibility tree and its frame as a
  * `vlmkit-a11y/1` file, for `vlmkit check a11y tree` to judge.
  *
- * Two collectors today, chosen by the source:
+ * Collectors chosen by the source:
  *
  * - a page (URL or HTML file) → the Flutter web collector (`flutter-web.ts`), in a browser;
  * - a `.xml` file → the Android `uiautomator dump` importer (`uiautomator.ts`), no browser.
  *
- * Anything else — macOS AX, Windows UI Automation, iOS, a Flutter desktop app's semantics
+ * - `macos:` → the local Swift AX/ScreenCaptureKit observer, no browser.
+ *
+ * Anything else — Windows UI Automation, iOS, a Flutter desktop app's semantics
  * dump — writes the same JSON with its own tool; nothing downstream knows which wrote it.
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -28,13 +30,14 @@ import {
   markFlutterTarget,
   type FlutterWebRawNode,
 } from "./flutter-web.ts";
+import { captureNativeA11y, type NativeCaptureResult } from "./native-agent.ts";
 import { importUiautomatorDump } from "./uiautomator.ts";
 
 /** Where `scan a11y` writes when `--out` is not given. */
 export const DEFAULT_A11Y_TREE = ".vlmkit/a11y.json";
 
 export interface ScanA11yOptions extends PageLoadOptions {
-  /** A page (Flutter web), or a uiautomator dump (`.xml`). */
+  /** Flutter page, uiautomator dump (`.xml`), or `macos:<bundle-id|pid=N|app-path>`. */
   source: string;
   out: string;
   /** Frame PNG: written for a page, read (as given) for a dump. */
@@ -47,6 +50,11 @@ export interface ScanA11yOptions extends PageLoadOptions {
   /** BCP 47 locale for the page. Default en-US: see `captureFlutterWeb`. */
   locale?: string;
   storageState?: string;
+  nativeAgent?: string;
+  launch?: boolean;
+  window?: string;
+  maxDepth?: number;
+  maxNodes?: number;
 }
 
 export interface ScanA11yReport {
@@ -58,6 +66,7 @@ export interface ScanA11yReport {
   redirect: string | null;
   clicks: string[];
   counts: { nodes: number; named: number; interactive: number };
+  native?: NativeCaptureResult;
 }
 
 const isDump = (source: string) => extname(source).toLowerCase() === ".xml";
@@ -154,7 +163,23 @@ export async function runScanA11y(options: ScanA11yOptions): Promise<ScanA11yRep
   let tree: A11yTree;
   let redirect: string | null = null;
   let frame: string | null;
-  if (isDump(options.source)) {
+  let native: NativeCaptureResult | undefined;
+  if (options.source.startsWith("macos:")) {
+    if (
+      options.clicks?.length ||
+      options.density !== undefined ||
+      options.viewport ||
+      options.har ||
+      options.storageState ||
+      options.locale
+    ) {
+      throw new UsageError("Native scan is observer-only; --click and page/dump options do not apply.");
+    }
+    frame = resolve(options.frame ?? `${out.slice(0, out.length - extname(out).length)}.png`);
+    const captured = await captureNativeA11y({ ...options, agent: options.nativeAgent, frame });
+    tree = captured.tree;
+    native = captured.capture;
+  } else if (isDump(options.source)) {
     if (options.density === undefined) {
       throw new UsageError(
         "a uiautomator dump needs --density: its bounds are device pixels and target sizes are judged in dp." +
@@ -175,6 +200,7 @@ export async function runScanA11y(options: ScanA11yOptions): Promise<ScanA11yRep
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, JSON.stringify(tree, null, 1) + "\n");
   return {
+    ...(native ? { native } : {}),
     source: options.source,
     platform: tree.platform ?? "unknown",
     out: options.out,

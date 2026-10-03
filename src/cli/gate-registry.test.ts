@@ -242,7 +242,8 @@ describe("composed built-in registry", () => {
     //       the page clock held and driven by the gate, so a rAF / timer loop that never
     //       stops is measured as one instead of being `uncontrolled-motion`.
     const total = (await registry()).list().reduce((n, { gate }) => n + gate.rules.length, 0);
-    assert.equal(total, 210);
+    // 210 → 211: native scan reports bounded/truncated or errored AX traversal.
+    assert.equal(total, 211);
   });
 
   it("tracks which gates render their own rule settings, and which still cannot", async () => {

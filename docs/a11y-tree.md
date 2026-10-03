@@ -133,3 +133,30 @@ The fourth pre-fix defect, the unreachable Action Log, is on the result screen. 
 build could reach that screen only by dragging, and `--click` cannot drag. The fixture
 (`fixtures/a11y-tree/flutter-like.html`) and the Android test cover the rule instead. Details
 are in `docs/reports/2026-09-25-a11y-tree-v1.md`.
+
+## Native macOS scan (macOS 14+)
+
+Build the local Swift observer with `./script/build_and_run.sh --build-only`,
+then set `VLMKIT_NATIVE_AGENT` to
+`native/macos/dist/VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent`:
+
+```sh
+vlmkit scan a11y macos:com.example.app --out a11y.json
+vlmkit scan a11y macos:pid=123 --window main --out a11y.json
+vlmkit scan a11y macos:/absolute/path/App.app --launch --out a11y.json
+vlmkit check a11y tree a11y.json
+```
+
+`--native-agent` overrides the executable path. Permissions are checked without
+prompting. `--launch` opts into launch; scans always detach. The tree's optional
+`identifier`, `platformRole`, and `platformSubrole` retain native metadata without
+a format bump. Paths are structural identity; identifiers need not be unique,
+and the collector warns about duplicates.
+
+Rects are full-window-local top-left logical points, including title bar; the
+PNG depicts those same bounds without shadows or cursor, at native scale.
+Capture checks dimensions and rejects window movement/resizing. Bounded traversal
+reports truncation/attribute errors as `native-incomplete`; inspect the scan
+result before judging a partial artifact. See [native setup and acceptance
+checks](../native/macos/README.md) for the stdio protocol, fixture, permissions,
+and pixel alignment tests.

@@ -1,0 +1,396 @@
+{
+  "format": "vlmkit-a11y/1",
+  "frame": "frame.png",
+  "nodes": [
+    {
+      "actions": [
+        "ax:AXRaise"
+      ],
+      "identifier": "fixture.window",
+      "name": "VLMKit AX Fixture",
+      "path": "window[0]",
+      "platformRole": "AXWindow",
+      "platformSubrole": "AXStandardWindow",
+      "rect": {
+        "height": 512,
+        "left": 0,
+        "top": 0,
+        "width": 640
+      },
+      "role": "window"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.save",
+      "name": "Save",
+      "path": "window[0]>button[0]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 29,
+        "top": 85,
+        "width": 102
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.unnamed",
+      "path": "window[0]>button[1]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 18,
+        "left": 139,
+        "top": 105,
+        "width": 18
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.nearby",
+      "name": "Nearby",
+      "path": "window[0]>button[2]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 154,
+        "top": 85,
+        "width": 82
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "ax:AXShowMenu",
+        "ax:AXConfirm",
+        "setText"
+      ],
+      "identifier": "fixture.name",
+      "name": "Name",
+      "path": "window[0]>textfield[3]",
+      "platformRole": "AXTextField",
+      "rect": {
+        "height": 34,
+        "left": 29,
+        "top": 149,
+        "width": 222
+      },
+      "role": "textfield",
+      "states": {
+        "focused": true
+      },
+      "value": "Ada"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.remember",
+      "name": "Remember",
+      "path": "window[0]>checkbox[4]",
+      "platformRole": "AXCheckBox",
+      "rect": {
+        "height": 32,
+        "left": 29,
+        "top": 201,
+        "width": 132
+      },
+      "role": "checkbox",
+      "states": {
+        "checked": true
+      },
+      "value": "1"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.disabled",
+      "name": "Disabled",
+      "path": "window[0]>button[5]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 279,
+        "top": 145,
+        "width": 112
+      },
+      "role": "button",
+      "states": {
+        "disabled": true
+      }
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.duplicate.one",
+      "name": "Duplicate",
+      "path": "window[0]>button[6]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 279,
+        "top": 195,
+        "width": 112
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.duplicate.two",
+      "name": "Duplicate",
+      "path": "window[0]>button[7]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 399,
+        "top": 195,
+        "width": 112
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.dialog",
+      "name": "Open dialog",
+      "path": "window[0]>button[8]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 279,
+        "top": 85,
+        "width": 142
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "ax:AXScrollLeftByPage",
+        "ax:AXScrollRightByPage",
+        "ax:AXScrollUpByPage",
+        "ax:AXScrollDownByPage",
+        "scroll"
+      ],
+      "identifier": "fixture.scroll",
+      "path": "window[0]>scrollview[9]",
+      "platformRole": "AXScrollArea",
+      "rect": {
+        "height": 200,
+        "left": 30,
+        "top": 282,
+        "width": 560
+      },
+      "role": "scrollview"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.offscreen",
+      "name": "Offscreen scroll control",
+      "path": "window[0]>scrollview[9]>button[0]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 49,
+        "top": -95,
+        "width": 222
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "identifier": "fixture.scroll.visible",
+      "name": "Visible scroll control",
+      "path": "window[0]>scrollview[9]>button[1]",
+      "platformRole": "AXButton",
+      "rect": {
+        "height": 38,
+        "left": 49,
+        "top": 425,
+        "width": 222
+      },
+      "role": "button"
+    },
+    {
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]",
+      "platformRole": "AXScrollBar",
+      "rect": {
+        "height": 202,
+        "left": 572,
+        "top": 281,
+        "width": 19
+      },
+      "role": "AXScrollBar",
+      "value": "1"
+    },
+    {
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]>AXValueIndicator[0]",
+      "platformRole": "AXValueIndicator",
+      "rect": {
+        "height": 64.5,
+        "left": 581,
+        "top": 414.5,
+        "width": 6
+      },
+      "role": "AXValueIndicator",
+      "value": "1"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]>button[1]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXIncrementArrow",
+      "rect": {
+        "height": 0,
+        "left": 573,
+        "top": 282,
+        "width": 0
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]>button[2]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXDecrementArrow",
+      "rect": {
+        "height": 0,
+        "left": 573,
+        "top": 282,
+        "width": 0
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]>button[3]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXIncrementPage",
+      "rect": {
+        "height": 0,
+        "left": 581,
+        "top": 479,
+        "width": 6
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>scrollview[9]>AXScrollBar[2]>button[4]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXDecrementPage",
+      "rect": {
+        "height": 129,
+        "left": 581,
+        "top": 285,
+        "width": 6
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>button[10]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXCloseButton",
+      "rect": {
+        "height": 16,
+        "left": 8,
+        "top": 8,
+        "width": 16
+      },
+      "role": "button"
+    },
+    {
+      "actions": [
+        "tap",
+        "ax:AXShowMenu"
+      ],
+      "path": "window[0]>button[11]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXZoomButton",
+      "rect": {
+        "height": 16,
+        "left": 54,
+        "top": 8,
+        "width": 16
+      },
+      "role": "button",
+      "states": {
+        "disabled": true
+      }
+    },
+    {
+      "path": "window[0]>button[11]>group[0]",
+      "platformRole": "AXGroup",
+      "rect": {
+        "height": 14,
+        "left": 55,
+        "top": 9,
+        "width": 14
+      },
+      "role": "group"
+    },
+    {
+      "actions": [
+        "tap"
+      ],
+      "path": "window[0]>button[12]",
+      "platformRole": "AXButton",
+      "platformSubrole": "AXMinimizeButton",
+      "rect": {
+        "height": 16,
+        "left": 31,
+        "top": 8,
+        "width": 16
+      },
+      "role": "button",
+      "states": {
+        "disabled": true
+      }
+    },
+    {
+      "name": "VLMKit AX Fixture",
+      "path": "window[0]>text[13]",
+      "platformRole": "AXStaticText",
+      "rect": {
+        "height": 16,
+        "left": 82,
+        "top": 8,
+        "width": 122
+      },
+      "role": "text",
+      "value": "VLMKit AX Fixture"
+    }
+  ],
+  "platform": "macos",
+  "scale": 2,
+  "viewport": {
+    "height": 512,
+    "width": 640
+  }
+}

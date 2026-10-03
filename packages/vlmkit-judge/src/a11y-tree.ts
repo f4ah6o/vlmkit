@@ -76,6 +76,11 @@ export interface A11yRect {
 export interface A11yNode {
   /** `name[index]>name[index]…` — unique; ancestry comes from its prefixes, as in `scene.ts`. */
   path: string;
+  /** Stable platform accessibility identifier, when exposed. Not necessarily unique. */
+  identifier?: string;
+  /** Original platform role and subrole before normalization. */
+  platformRole?: string;
+  platformSubrole?: string;
   /** An `A11yRole`, or the platform's own role when it has no mapping. */
   role: string;
   /** The accessible name: what a screen reader announces. Absent or empty means unnamed. */

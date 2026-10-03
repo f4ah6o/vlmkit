@@ -573,11 +573,11 @@ P0A is complete only when hand-written fixture trees prove:
 
 For the native a11y artifact:
 
-- `viewport` is selected-window content size in logical points;
-- node `rect` is window-content-local logical points;
+- `viewport` is selected-window full bounds in logical points (including title bar);
+- node `rect` is full-window-local logical points;
 - origin is top-left;
 - `scale` is frame pixels per logical point;
-- PNG must depict exactly the same window-content coordinate region represented by the tree.
+- PNG must depict exactly the same full-window coordinate region represented by the tree.
 
 Do not mix global AX screen coordinates into persisted `rect`.
 
@@ -585,7 +585,7 @@ The Swift collector performs:
 
 ```text
 AX global screen rect
- -> selected window content origin
+ -> selected window full-frame origin
  -> window-local logical rect
  -> A11yNode.rect
 ```
@@ -656,3 +656,22 @@ The next design packet should specify:
 2. window-content coordinate normalization;
 3. stdio protocol v1 request/response examples;
 4. P0A/P0B fixture and test matrix.
+
+## P0 implementation — 2026-10-03
+
+Model: unknown
+
+P0A/P0B and the native scan vertical slice are implemented in `native/macos/`
+and `packages/vlmkit-markup/src/a11y-tree/native-agent.ts`. The observer requires
+macOS 14+, uses a stable app bundle identity, and implements protocol 1 over
+stdio. The CLI accepts `macos:` targets and reports partial traversal. Generic
+judges remain platform-independent.
+
+The coordinate decision is refined by the collector protocol: **full selected
+window bounds including title bar**, shadow excluded, top-left local logical
+points; not an AppKit content-only crop. Recorded 2x fixture output and an actual
+Save pixel/rect check verify this decision.
+
+Validation and limitations:
+[2026-10-03 native observer acceptance](../../docs/reports/2026-10-03-native-observer-p0.md).
+These parent designs remain open for the later native driver/GPUI phases.
