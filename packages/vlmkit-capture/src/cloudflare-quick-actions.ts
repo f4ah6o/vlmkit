@@ -1,3 +1,9 @@
+import {
+  contentPolicyMetadata,
+  type ContentPolicyMetadata,
+  type ContentProvenance,
+} from "@mizchi/vlmkit-core/content-provenance.ts";
+
 export type CloudflareQuickAction = "screenshot" | "crawl";
 
 export interface CloudflareQuickActionsConfig {
@@ -21,6 +27,11 @@ export interface CloudflareQuickActionEndpointInput {
 }
 
 export interface CloudflareScreenshotRequest {
+  /**
+   * Local-only policy metadata. It is stripped before the Cloudflare request and returned with
+   * the screenshot result so downstream egress/artifact code can make a policy decision.
+   */
+  provenance?: ContentProvenance;
   url?: string;
   html?: string;
   viewport?: {
@@ -54,6 +65,7 @@ export interface CloudflareScreenshotResult {
   bytes: ArrayBuffer;
   contentType: string;
   browserMsUsed?: number;
+  contentPolicy: ContentPolicyMetadata;
 }
 
 export interface CloudflareCrawlRequest {
@@ -171,12 +183,14 @@ export function createCloudflareQuickActionsClient(config: CloudflareQuickAction
       if (!input.url && !input.html) {
         throw new Error("Cloudflare screenshot requires url or html");
       }
-      const response = await post("screenshot", input);
+      const { provenance = "unclassified", ...request } = input;
+      const response = await post("screenshot", request);
       const browserMsHeader = response.headers.get("x-browser-ms-used");
       return {
         bytes: await response.arrayBuffer(),
         contentType: response.headers.get("content-type") ?? "image/png",
         browserMsUsed: browserMsHeader ? Number(browserMsHeader) : undefined,
+        contentPolicy: contentPolicyMetadata(provenance, "capture"),
       };
     },
 

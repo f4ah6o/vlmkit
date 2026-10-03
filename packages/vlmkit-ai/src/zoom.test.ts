@@ -182,7 +182,7 @@ describe("runZoomLoop", () => {
       },
       { text: "The rule is at the centre.", calls: [], usage: { promptTokens: 20, completionTokens: 5 } },
     ]);
-    const result = await runZoomLoop(driver, [{ png: image }], "Where is the rule?");
+    const result = await runZoomLoop(driver, [{ png: image, provenance: "app_owned" }], "Where is the rule?");
     assert.equal(result.answer, "The rule is at the centre.");
     assert.equal(result.zooms.length, 1);
     assert.deepEqual(result.usage, { promptTokens: 30, completionTokens: 7 });
@@ -200,7 +200,7 @@ describe("runZoomLoop", () => {
       { text: "ZOOM 0 700 50 800 100", calls: [] },
       { text: "Centre.", calls: [] },
     ]);
-    const result = await runZoomLoop(driver, [{ png: image }], "Where?");
+    const result = await runZoomLoop(driver, [{ png: image, provenance: "app_owned" }], "Where?");
     assert.equal(result.protocol, "text");
     assert.equal(result.zooms.length, 1);
     assert.equal(result.answer, "Centre.");
@@ -219,7 +219,7 @@ describe("runZoomLoop", () => {
       },
       { text: "ok", calls: [] },
     ]);
-    const result = await runZoomLoop(driver, [{ png: image }], "?");
+    const result = await runZoomLoop(driver, [{ png: image, provenance: "app_owned" }], "?");
     assert.equal(result.rejected.length, 2);
     const results = driver.seen[1]!.find((t) => t.role === "tool");
     assert.ok(results?.role === "tool" && results.results.every((r) => r.isError));
@@ -231,7 +231,7 @@ describe("runZoomLoop", () => {
       calls: [{ id, imageIndex: 0, box: { x1: 0, y1: 0, x2: 100, y2: 100 } }],
     });
     const driver = scripted(true, [zoom("a"), zoom("b"), { text: "final", calls: [] }]);
-    const result = await runZoomLoop(driver, [{ png: image }], "?", { maxZooms: 2 });
+    const result = await runZoomLoop(driver, [{ png: image, provenance: "app_owned" }], "?", { maxZooms: 2 });
     assert.equal(result.wrappedUp, true);
     assert.equal(result.answer, "final");
     assert.deepEqual(driver.offered, [true, true, false]);
@@ -246,8 +246,8 @@ describe("runZoomLoop", () => {
     const result = await runZoomLoop(
       driver,
       [
-        { png: image, label: "Baseline" },
-        { png: png(canvas(400, 300)), label: "Current" },
+        { png: image, provenance: "app_owned", label: "Baseline" },
+        { png: png(canvas(400, 300)), provenance: "app_owned", label: "Current" },
       ],
       "Diff?",
     );
@@ -260,7 +260,7 @@ describe("runSingleLook: the control arm", () => {
   it("shows the same images at the same size, offers no tool and never mentions zooming", async () => {
     const image = png(canvas(3000, 1000, 1501));
     const control = scripted(true, [{ text: " answer ", calls: [], usage: { promptTokens: 7, completionTokens: 3 } }]);
-    const result = await runSingleLook(control, [{ png: image, label: "Current" }], "What is there?");
+    const result = await runSingleLook(control, [{ png: image, provenance: "app_owned", label: "Current" }], "What is there?");
     assert.equal(result.answer, "answer");
     assert.deepEqual(result.usage, { promptTokens: 7, completionTokens: 3 });
     assert.deepEqual(control.offered, [false]);
@@ -269,7 +269,7 @@ describe("runSingleLook: the control arm", () => {
     assert.doesNotMatch(shown, /zoom/i, "a control that is told about a tool it lacks is not a control");
 
     const loop = scripted(true, [{ text: "answer", calls: [] }]);
-    await runZoomLoop(loop, [{ png: image, label: "Current" }], "What is there?");
+    await runZoomLoop(loop, [{ png: image, provenance: "app_owned", label: "Current" }], "What is there?");
     const images = (turns: ZoomTurn[]) =>
       turns[0]!.role === "user" ? turns[0]!.parts.filter((p) => p.type === "image") : [];
     assert.deepEqual(images(control.seen[0]!), images(loop.seen[0]!), "both arms send identical image bytes");
@@ -316,7 +316,7 @@ describe("drivers: the same loop on three wire formats", () => {
     ]);
     const result = await runZoomLoop(
       openAiCompatibleDriver({ model: "qwen/qwen3-vl", apiKey: "k", fetch: f }),
-      [{ png: image }],
+      [{ png: image, provenance: "app_owned" }],
       "What is at the centre?",
     );
     assert.equal(result.answer, "A thin rule.");
@@ -350,7 +350,7 @@ describe("drivers: the same loop on three wire formats", () => {
     ]);
     const result = await runZoomLoop(
       anthropicDriver({ model: "claude-haiku-4-5", apiKey: "k", fetch: f }),
-      [{ png: image }],
+      [{ png: image, provenance: "app_owned" }],
       "?",
     );
     assert.equal(result.answer, "A rule.");
@@ -387,7 +387,7 @@ describe("drivers: the same loop on three wire formats", () => {
     ]);
     const result = await runZoomLoop(
       geminiDriver({ model: "gemini-2.5-flash", apiKey: "k", fetch: f }),
-      [{ png: image }],
+      [{ png: image, provenance: "app_owned" }],
       "?",
     );
     assert.equal(result.answer, "A rule.");
@@ -412,7 +412,7 @@ describe("drivers: the same loop on three wire formats", () => {
       },
       { choices: [{ message: { content: "fine" } }] },
     ]);
-    const result = await runZoomLoop(openAiCompatibleDriver({ model: "m", fetch: f }), [{ png: image }], "?");
+    const result = await runZoomLoop(openAiCompatibleDriver({ model: "m", fetch: f }), [{ png: image, provenance: "app_owned" }], "?");
     assert.equal(result.rejected[0]!.reason, "arguments are not valid JSON");
     assert.equal(requests[1]!.body.messages[2].tool_call_id, "bad");
   });
@@ -477,7 +477,7 @@ describe("analyzeWithZoom: model ids the rest of the package already takes", () 
           contextLength: 0,
           modality: "",
         },
-        [{ png: png(canvas(200, 200)) }],
+        [{ png: png(canvas(200, 200)), provenance: "app_owned" }],
         "What is in the corner?",
         { apiKey: "k" },
       );

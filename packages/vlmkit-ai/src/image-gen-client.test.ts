@@ -171,6 +171,35 @@ describe("OpenRouter route", () => {
     assert.equal(parsed.usage?.outputTokens, 4175);
   });
 
+  it("blocks unclassified image references before OpenRouter transport", async () => {
+    let calls = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls++;
+      throw new Error("transport must not be reached");
+    }) as typeof fetch;
+    try {
+      const client = createImageGenClient("meta/muse-image", { apiKey: "k", baseUrl: "http://or.test" });
+      await assert.rejects(
+        () => client.generate({ prompt: "p", inputReferences: ["data:image/png;base64,POISON_DO_NOT_EGRESS"] }),
+        /External AI egress blocked/,
+      );
+      await assert.rejects(
+        () =>
+          client.generate({
+            prompt: "p",
+            inputReferences: [
+              { url: "data:image/png;base64,POISON_DO_NOT_EGRESS", provenance: "restricted_content" },
+            ],
+          }),
+        /External AI egress blocked/,
+      );
+      assert.equal(calls, 0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
   it("posts to /api/v1/images with the OpenRouter key", async () => {
     const calls: { url: string; auth: string | null; body: unknown }[] = [];
     const realFetch = globalThis.fetch;

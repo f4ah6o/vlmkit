@@ -35,6 +35,12 @@
 
 // ---- Types (open re-export — types don't pollute the value namespace) ----
 export * from "./types.ts";
+export {
+  contentPolicyMetadata,
+  type ContentPolicyMetadata,
+  type ContentProvenance,
+  type ContentSource,
+} from "./content-provenance.ts";
 
 // ---- Image diff ----
 export {

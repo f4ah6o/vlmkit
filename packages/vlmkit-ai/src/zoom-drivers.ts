@@ -24,8 +24,19 @@ import type {
   ZoomTurn,
 } from "./zoom-loop.ts";
 import { zoomCallFromArgs } from "./zoom-loop.ts";
+import { assertExternalAiAllowed } from "./provenance.ts";
 
 type Fetch = typeof fetch;
+
+function assertZoomTranscriptAllowed(transcript: readonly ZoomTurn[]): void {
+  for (const turn of transcript) {
+    const parts = turn.role === "user" ? turn.parts : turn.role === "tool" ? turn.results.flatMap((result) => result.parts) : [];
+    for (const part of parts) {
+      if (part.type === "image") assertExternalAiAllowed(part, "image", "zoom transcript");
+      else if (part.provenance !== undefined) assertExternalAiAllowed(part, "text", "zoom transcript");
+    }
+  }
+}
 
 async function postJson(
   fetcher: Fetch,
@@ -125,6 +136,7 @@ export function openAiCompatibleDriver(options: OpenAiCompatibleDriverOptions): 
     model: options.model,
     nativeTools: options.nativeTools ?? true,
     async turn(transcript, { tool, maxTokens }) {
+      assertZoomTranscriptAllowed(transcript);
       const data = await postJson(
         fetcher,
         url,
@@ -237,6 +249,7 @@ export function anthropicDriver(options: AnthropicDriverOptions): VisionChatDriv
     model: options.model,
     nativeTools: true,
     async turn(transcript, { tool, maxTokens }) {
+      assertZoomTranscriptAllowed(transcript);
       const data = await postJson(
         fetcher,
         url,
@@ -341,6 +354,7 @@ export function geminiDriver(options: GeminiDriverOptions): VisionChatDriver {
     model: options.model,
     nativeTools: true,
     async turn(transcript, { tool, maxTokens }) {
+      assertZoomTranscriptAllowed(transcript);
       const data = await postJson(
         fetcher,
         url,
