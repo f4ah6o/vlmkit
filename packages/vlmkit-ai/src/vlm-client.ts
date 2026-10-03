@@ -60,11 +60,17 @@ function guardVlmClient(client: VlmClient): VlmClient {
         mediaType: options?.mediaType,
         label: "VLM image",
       });
-      return client.analyzeImage(image.base64, prompt, { maxTokens: options?.maxTokens });
+      return client.analyzeImage(image.base64, prompt, {
+        maxTokens: options?.maxTokens,
+        mediaType: image.mediaType,
+      });
     },
     async analyzeImageFile(imagePath, prompt, options) {
       assertExternalAiAllowed({ provenance: options?.provenance }, "image", "VLM image file");
-      return client.analyzeImageFile(imagePath, prompt, { maxTokens: options?.maxTokens });
+      return client.analyzeImageFile(imagePath, prompt, {
+        maxTokens: options?.maxTokens,
+        mediaType: options?.mediaType,
+      });
     },
     async analyzeDiff(baselineBase64, currentBase64, prompt, options) {
       const baseline = assertExternalAiImageAllowed(baselineBase64, {
@@ -345,7 +351,7 @@ async function createClaudeClient(model: VlmModel, apiKey: string): Promise<VlmC
     async analyzeImage(imageBase64, prompt, options) {
       return callClaude(
         [
-          { type: "image", source: { type: "base64", media_type: "image/png", data: imageBase64 } },
+          { type: "image", source: { type: "base64", media_type: options?.mediaType ?? "image/png", data: imageBase64 } },
           { type: "text", text: prompt },
         ],
         options?.maxTokens ?? 1024,
@@ -385,13 +391,18 @@ async function createGeminiClient(model: VlmModel, apiKey: string): Promise<VlmC
   const genAI = new GoogleGenerativeAI(apiKey);
   const genModel = genAI.getGenerativeModel({ model: geminiModelId });
 
-  async function callGemini(imageBase64: string, textPrompt: string, maxTokens: number): Promise<VlmResponse> {
+  async function callGemini(
+    imageBase64: string,
+    textPrompt: string,
+    maxTokens: number,
+    mediaType: VlmAnalyzeOptions["mediaType"] = "image/png",
+  ): Promise<VlmResponse> {
     const start = Date.now();
     const result = await genModel.generateContent({
       contents: [
         {
           role: "user",
-          parts: [{ inlineData: { mimeType: "image/png", data: imageBase64 } }, { text: textPrompt }],
+          parts: [{ inlineData: { mimeType: mediaType, data: imageBase64 } }, { text: textPrompt }],
         },
       ],
       generationConfig: { maxOutputTokens: maxTokens },
@@ -420,7 +431,7 @@ async function createGeminiClient(model: VlmModel, apiKey: string): Promise<VlmC
   const client: VlmClient = {
     model,
     async analyzeImage(imageBase64, prompt, options) {
-      return callGemini(imageBase64, prompt, options?.maxTokens ?? 1024);
+      return callGemini(imageBase64, prompt, options?.maxTokens ?? 1024, options?.mediaType);
     },
     async analyzeImageFile(imagePath, prompt, options) {
       const buf = await readFile(imagePath);
@@ -580,7 +591,10 @@ export async function createVlmClient(model: VlmModel, options?: CreateVlmClient
           {
             role: "user",
             content: [
-              { type: "image_url", image_url: { url: `data:image/png;base64,${imageBase64}` } },
+              {
+                type: "image_url",
+                image_url: { url: `data:${options?.mediaType ?? "image/png"};base64,${imageBase64}` },
+              },
               { type: "text", text: prompt },
             ],
           },
