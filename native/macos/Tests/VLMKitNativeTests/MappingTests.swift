@@ -47,3 +47,42 @@ extension MappingTests {
         XCTAssertEqual(prompts, 2)
     }
 }
+
+extension MappingTests {
+    func testScreenshotPixelTransformUsesOneScaleAndGlobalOrigin() throws {
+        let transform = NativeCoordinateTransform(
+            globalWindowOriginPoints: CGPoint(x: -1200, y: 80),
+            logicalToPixelScale: 2
+        )
+        let global = try transform.globalPoint(xPx: 200, yPx: 72)
+        XCTAssertEqual(global.x, -1100)
+        XCTAssertEqual(global.y, 116)
+        XCTAssertEqual(transform.localPoint(global), CGPoint(x: 100, y: 36))
+    }
+
+    func testActionEvidenceRedactsTypedText() {
+        let record = safeActionEvidence(
+            action: [
+                "kind": "typeText",
+                "mode": "semantic",
+                "text": "POISON_DO_NOT_LOG",
+                "locator": ["by": "stable-id", "value": "fixture.name"]
+            ],
+            mode: "semantic",
+            target: ["identifier": "fixture.name", "role": "textfield"],
+            point: nil
+        )
+        let action = record["action"] as! [String: Any]
+        XCTAssertNil(action["text"])
+        XCTAssertEqual(action["textLength"] as? Int, "POISON_DO_NOT_LOG".utf16.count)
+    }
+
+    func testDuplicateRoleNameLocatorIsAmbiguousBeforeAction() throws {
+        let root = AXUIElementCreateSystemWide()
+        XCTAssertThrowsError(
+            try resolveLocator(root, origin: .zero, locator: ["by": "role-name", "role": "button", "name": "missing"])
+        ) {
+            XCTAssertEqual(($0 as? NativeError)?.code, "NATIVE_LOCATOR_NOT_FOUND")
+        }
+    }
+}
