@@ -388,6 +388,14 @@ describe("Anthropic requests", () => {
     assert.ok(res.latencyMs >= 0);
   });
 
+  it("preserves an allowed JPEG media type through the Anthropic request", async () => {
+    stubFetch(() => ({ json: reply }));
+    const client = await createVlmClient(claude, { apiKey: "k" });
+    await client!.analyzeImage("JPEGDATA", "p", { provenance: "app_owned", mediaType: "image/jpeg" });
+    const content = (captured[0]!.body.messages as { content: Record<string, unknown>[] }[])[0]!.content;
+    assert.deepEqual(content[0]!.source, { type: "base64", media_type: "image/jpeg", data: "JPEGDATA" });
+  });
+
   it("labels which screenshot is which in a diff request", async () => {
     // The labels are the whole reason a two-image request works: without them the model has two
     // unnamed images and reports the delta in an arbitrary direction.
@@ -475,6 +483,13 @@ describe("OpenRouter requests", () => {
     assert.equal(res.totalTokens, 520);
   });
 
+  it("preserves an allowed WebP media type in the OpenRouter data URL", async () => {
+    stubFetch(() => ({ json: reply }));
+    const client = await createVlmClient(model, { apiKey: "or-key" });
+    await client!.analyzeImage("WEBPDATA", "p", { provenance: "app_owned", mediaType: "image/webp" });
+    assert.match(JSON.stringify(captured[0]!.body), /data:image\/webp;base64,WEBPDATA/);
+  });
+
   it("prefers the provider's own total when it sends one", async () => {
     // A total that exceeds prompt+completion is not a bug to correct: a model billing reasoning
     // tokens reports them there and nowhere else.
@@ -540,6 +555,13 @@ describe("Gemini requests", () => {
     assert.deepEqual(parts[0]!.inlineData, { mimeType: "image/png", data: "IMGDATA" });
     assert.equal(parts[1]!.text, "what changed?");
     assert.deepEqual(call.generationConfig, { maxOutputTokens: 512 });
+  });
+
+  it("preserves an allowed GIF media type in Gemini inlineData", async () => {
+    const client = await createVlmClient(gemini, { apiKey: "g-key" });
+    await client!.analyzeImage("GIFDATA", "p", { provenance: "app_owned", mediaType: "image/gif" });
+    const parts = (geminiCalls[0]!.contents as { parts: Record<string, unknown>[] }[])[0]!.parts;
+    assert.deepEqual(parts[0]!.inlineData, { mimeType: "image/gif", data: "GIFDATA" });
   });
 
   it("maps usageMetadata onto the same cost fields as the other providers", async () => {
