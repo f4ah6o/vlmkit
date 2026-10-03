@@ -93,6 +93,12 @@ export interface NativeInteractionSession {
   readonly client: NativeAgentClient;
   hitTest(point: { xPx: number; yPx: number }): Promise<NativeHitResult>;
   perform(action: NativeSurfaceAction, options?: { evidencePath?: string }): Promise<NativeActionResult>;
+  capture(options: {
+    treePath: string;
+    pngPath: string;
+    maxDepth?: number;
+    maxNodes?: number;
+  }): Promise<{ tree: A11yTree; capture: NativeCaptureResult }>;
   close(options?: { terminateIfLaunched?: boolean }): Promise<void>;
 }
 export interface NativeCaptureResult {
@@ -237,6 +243,42 @@ function nativeAgentExecutable(agent?: string): string {
   return executable;
 }
 
+export interface NativeDoctorResult {
+  hello: {
+    protocol: number;
+    agentVersion?: string;
+    bundleId?: string;
+    macOSVersion?: string;
+    arch?: string;
+    capabilities?: Record<string, boolean>;
+    build?: Record<string, unknown>;
+  };
+  doctor: {
+    accessibility: { trusted: boolean };
+    screenCapture: { authorized: boolean };
+    agent?: Record<string, unknown>;
+    checks?: Array<{ id: string; status: "pass" | "fail" | "warn"; message: string }>;
+  };
+}
+
+export async function runNativeDoctor(options: {
+  agent?: string;
+  prompt?: boolean;
+  timeout?: number;
+} = {}): Promise<NativeDoctorResult> {
+  if (process.platform !== "darwin") throw new UsageError("Native macOS doctor requires a macOS host.");
+  const client = new NativeAgentClient(nativeAgentExecutable(options.agent), options.timeout);
+  try {
+    const hello = await client.request<NativeDoctorResult["hello"]>("hello");
+    if (hello.protocol !== 1)
+      throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
+    const doctor = await client.request<NativeDoctorResult["doctor"]>("doctor", { prompt: options.prompt ?? false });
+    return { hello, doctor };
+  } finally {
+    client.close();
+  }
+}
+
 async function assertNativePermissions(client: NativeAgentClient): Promise<void> {
   const hello = await client.request<{ protocol: number }>("hello");
   if (hello.protocol !== 1)
@@ -284,6 +326,43 @@ async function selectNativeWindow(options: {
   }
 }
 
+export async function captureNativeSession(
+  client: NativeAgentClient,
+  sessionId: string,
+  windowId: string,
+  options: {
+    treePath: string;
+    pngPath: string;
+    maxDepth?: number;
+    maxNodes?: number;
+  },
+): Promise<{ tree: A11yTree; capture: NativeCaptureResult }> {
+  const capture = await client.request<NativeCaptureResult>("snapshot.capture", {
+    sessionId,
+    windowId,
+    outputTreePath: resolve(options.treePath),
+    outputPngPath: resolve(options.pngPath),
+    maxDepth: options.maxDepth,
+    maxNodes: options.maxNodes,
+  });
+  const tree = parseA11yTree(await readFile(capture.treePath, "utf8"));
+  const pixels = await decodePng(capture.pngPath);
+  if (
+    tree.platform !== "macos" ||
+    tree.scale !== capture.scale ||
+    tree.viewport.width !== capture.viewport.width ||
+    tree.viewport.height !== capture.viewport.height ||
+    tree.nodes.length !== capture.counts.nodes ||
+    pixels.width !== capture.framePixels.width ||
+    pixels.height !== capture.framePixels.height ||
+    Math.abs(capture.framePixels.width - tree.viewport.width * capture.scale) > 1 ||
+    Math.abs(capture.framePixels.height - tree.viewport.height * capture.scale) > 1
+  ) {
+    throw new NativeAgentError("NATIVE_COORDINATE_MISMATCH", "capture metadata and tree disagree");
+  }
+  return { tree, capture };
+}
+
 export async function openNativeInteractionSession(options: {
   source: string;
   agent?: string;
@@ -318,6 +397,8 @@ export async function openNativeInteractionSession(options: {
           action,
           ...(performOptions?.evidencePath ? { evidencePath: resolve(performOptions.evidencePath) } : {}),
         }),
+      capture: (captureOptions) =>
+        captureNativeSession(client, sessionId!, window.windowId, captureOptions),
       async close(closeOptions) {
         if (closed) return;
         closed = true;
@@ -364,30 +445,12 @@ export async function captureNativeA11y(options: {
       launch: options.launch,
       timeout: options.timeout,
     });
-    const capture = await client.request<NativeCaptureResult>("snapshot.capture", {
-      sessionId,
-      windowId: window.windowId,
-      outputTreePath: resolve(options.out),
-      outputPngPath: resolve(options.frame),
+    return await captureNativeSession(client, sessionId, window.windowId, {
+      treePath: options.out,
+      pngPath: options.frame,
       maxDepth: options.maxDepth,
       maxNodes: options.maxNodes,
     });
-    const tree = parseA11yTree(await readFile(capture.treePath, "utf8"));
-    const pixels = await decodePng(capture.pngPath);
-    if (
-      tree.platform !== "macos" ||
-      tree.scale !== capture.scale ||
-      tree.viewport.width !== capture.viewport.width ||
-      tree.viewport.height !== capture.viewport.height ||
-      tree.nodes.length !== capture.counts.nodes ||
-      pixels.width !== capture.framePixels.width ||
-      pixels.height !== capture.framePixels.height ||
-      Math.abs(capture.framePixels.width - tree.viewport.width * capture.scale) > 1 ||
-      Math.abs(capture.framePixels.height - tree.viewport.height * capture.scale) > 1
-    ) {
-      throw new NativeAgentError("NATIVE_COORDINATE_MISMATCH", "capture metadata and tree disagree");
-    }
-    return { tree, capture };
   } finally {
     if (sessionId) await client.request("session.close", { sessionId }).catch(() => {});
     client.close();
