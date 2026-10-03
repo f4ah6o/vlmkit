@@ -51,6 +51,8 @@ export {
   type VlmClient,
   type VlmModel,
   type VlmResponse,
+  type VlmAnalyzeOptions,
+  type VlmDiffOptions,
 } from "./vlm-client.ts";
 
 // ---- Image generation clients ----
@@ -71,6 +73,7 @@ export {
   type ImageGenOutputFormat,
   type ImageGenQuality,
   type ImageGenRequest,
+  type ImageGenInputReference,
   type ImageGenRequestBody,
   type ImageGenResponse,
   type ImageGenSize,

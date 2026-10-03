@@ -19,8 +19,11 @@
  */
 import { DEFAULT_IMAGE_BUDGET, toViewBox, type Box, type ImageBudget, type ZoomCoordinates } from "./zoom-geometry.ts";
 import { prepareZoomSource, zoomInto, type ZoomSource } from "./zoom-image.ts";
+import type { ContentProvenance } from "./provenance.ts";
 
-export type ZoomPart = { type: "text"; text: string } | { type: "image"; png: Buffer };
+export type ZoomPart =
+  | { type: "text"; text: string; provenance?: ContentProvenance }
+  | { type: "image"; png: Buffer; provenance?: ContentProvenance };
 
 export interface ZoomCall {
   /** Provider call id (native), or a synthetic one (text protocol). */
@@ -85,6 +88,8 @@ export interface VisionChatDriver {
 
 export interface ZoomImageInput {
   png: Buffer;
+  /** Missing provenance is unclassified and rejected by external drivers. */
+  provenance?: ContentProvenance;
   /** Shown before the image, e.g. "Baseline screenshot". */
   label?: string;
 }
@@ -202,7 +207,7 @@ function introParts(
   sources.forEach((src, i) => {
     const label = images[i]!.label ? `${images[i]!.label} — ` : "";
     intro.push({ type: "text", text: `${label}Image ${i} (${src.view.width}x${src.view.height} pixels):` });
-    intro.push({ type: "image", png: src.viewPng });
+    intro.push({ type: "image", png: src.viewPng, provenance: images[i]!.provenance });
   });
   const coordNote =
     coordinates === "pixels"
@@ -344,7 +349,7 @@ export async function runZoomLoop(
         isError: false,
         parts: [
           { type: "text", text: outcome.text },
-          { type: "image", png: outcome.png },
+          { type: "image", png: outcome.png, provenance: images[call.imageIndex]?.provenance },
         ],
       });
     }

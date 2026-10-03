@@ -11,6 +11,7 @@
 import type { LLMProvider } from "./intent.ts";
 import { VrtConfigError } from "./errors.ts";
 import { readEnv } from "@mizchi/vlmkit-core/project-config.ts";
+import { assertExternalAiMessageAllowed, type ContentProvenance } from "./provenance.ts";
 
 // ---- Types ----
 
@@ -34,11 +35,15 @@ export interface ImageContent {
   type: "image";
   base64: string;
   mimeType?: string;
+  /** Missing provenance is fail-closed at the external-AI boundary. */
+  provenance?: ContentProvenance;
 }
 
 export interface TextContent {
   type: "text";
   text: string;
+  /** Omit only for fixed caller-owned prompt text. */
+  provenance?: ContentProvenance;
 }
 
 export type MessageContent = string | Array<TextContent | ImageContent>;
@@ -63,7 +68,11 @@ export interface UnifiedLLMClient {
     heatmapBase64?: string;
     baselineBase64?: string;
     currentBase64?: string;
+    heatmapProvenance?: ContentProvenance;
+    baselineProvenance?: ContentProvenance;
+    currentProvenance?: ContentProvenance;
     textReport: string;
+    textReportProvenance?: ContentProvenance;
     prompt?: string;
     maxTokens?: number;
   }): Promise<LLMResponse>;
@@ -281,31 +290,49 @@ function buildDiffContent(options: {
   heatmapBase64?: string;
   baselineBase64?: string;
   currentBase64?: string;
+  heatmapProvenance?: ContentProvenance;
+  baselineProvenance?: ContentProvenance;
+  currentProvenance?: ContentProvenance;
   textReport: string;
+  textReportProvenance?: ContentProvenance;
   prompt?: string;
 }): MessageContent {
   const parts: Array<TextContent | ImageContent> = [];
 
   if (options.baselineBase64) {
     parts.push({ type: "text", text: "Baseline screenshot:" });
-    parts.push({ type: "image", base64: options.baselineBase64 });
+    parts.push({ type: "image", base64: options.baselineBase64, provenance: options.baselineProvenance });
   }
   if (options.currentBase64) {
     parts.push({ type: "text", text: "Current screenshot:" });
-    parts.push({ type: "image", base64: options.currentBase64 });
+    parts.push({ type: "image", base64: options.currentBase64, provenance: options.currentProvenance });
   }
   if (options.heatmapBase64) {
     parts.push({ type: "text", text: "Diff heatmap (red = changed pixels):" });
-    parts.push({ type: "image", base64: options.heatmapBase64 });
+    parts.push({ type: "image", base64: options.heatmapBase64, provenance: options.heatmapProvenance });
   }
 
-  parts.push({ type: "text", text: options.textReport });
+  parts.push({ type: "text", text: options.textReport, ...(options.textReportProvenance ? { provenance: options.textReportProvenance } : {}) });
 
   if (options.prompt) {
     parts.push({ type: "text", text: options.prompt });
   }
 
   return parts;
+}
+
+function guardUnifiedClient(client: UnifiedLLMClient): UnifiedLLMClient {
+  return {
+    ...client,
+    async completeWithImages(content, options) {
+      assertExternalAiMessageAllowed(content);
+      return client.completeWithImages(content, options);
+    },
+    async analyzeDiff(options) {
+      assertExternalAiMessageAllowed(buildDiffContent(options));
+      return client.analyzeDiff(options);
+    },
+  };
 }
 
 // ---- Factory ----
@@ -470,11 +497,11 @@ export function createUnifiedLLMClient(options?: LLMClientOptions): UnifiedLLMCl
 
   switch (config.provider) {
     case "anthropic":
-      return createAnthropicClient(config.key, config.model);
+      return guardUnifiedClient(createAnthropicClient(config.key, config.model));
     case "gemini":
-      return createGeminiLLMClient(config.key, config.model);
+      return guardUnifiedClient(createGeminiLLMClient(config.key, config.model));
     case "openrouter":
-      return createOpenRouterLLMClient(config.key, config.model);
+      return guardUnifiedClient(createOpenRouterLLMClient(config.key, config.model));
   }
 }
 

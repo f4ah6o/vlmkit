@@ -14,6 +14,7 @@ import { createVlmClient, resolveModel, type VlmClient } from "./vlm-client.ts";
 import { VrtConfigError } from "./errors.ts";
 import { resizeBase64Png, type ResolutionPreset } from "@mizchi/vlmkit-core/image-resize.ts";
 import { readEnv } from "@mizchi/vlmkit-core/project-config.ts";
+import type { ContentProvenance } from "./provenance.ts";
 
 // ---- Types ----
 
@@ -72,6 +73,8 @@ export interface PipelineConfig {
 }
 
 export interface AnalyzeOptions {
+  /** Provenance of content-bearing Stage 1 images. Missing is fail-closed. */
+  contentProvenance?: ContentProvenance;
   heatmapBase64?: string;
   baselineBase64?: string;
   currentBase64?: string;
@@ -358,7 +361,10 @@ export function createReasoningPipeline(config?: PipelineConfig): ReasoningPipel
         prompt += `\n\nAdditional context from VRT pipeline:\n${options.textReport}`;
       }
 
-      const resp = await vlmClient.analyzeImage(imageBase64, prompt, { maxTokens: 1024 });
+      const resp = await vlmClient.analyzeImage(imageBase64, prompt, {
+        maxTokens: 1024,
+        provenance: options.contentProvenance,
+      });
 
       const parsed = parseStage1Response(resp.content);
       return {
