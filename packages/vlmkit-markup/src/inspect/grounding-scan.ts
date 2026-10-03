@@ -436,6 +436,15 @@ export interface GroundingScanOptions extends PageLoadOptions {
    * actions is how the second screen gets measured at all.
    */
   after?: readonly GroundingAction[];
+  /** macOS native sidecar path; only used for macos: sources. */
+  nativeAgent?: string;
+  /** Launch a macOS app target if it is not already running. */
+  launch?: boolean;
+  /** Native window selector: main, focused, index=N or a window id. */
+  window?: string;
+  /** Native AX traversal bounds. */
+  maxDepth?: number;
+  maxNodes?: number;
 }
 
 const MAX_TARGETS = 300;
@@ -1080,6 +1089,10 @@ export const COLLECT_GROUNDING_SCRIPT = `(() => {
 })()`;
 
 export async function runGroundingScan(options: GroundingScanOptions): Promise<GroundingScanReport> {
+  if (options.source.startsWith("macos:")) {
+    const { runNativeGrounding } = await import("../native/native-surface.ts");
+    return runNativeGrounding(options);
+  }
   const viewport = options.viewport ?? { width: 1280, height: 720 };
   return await withBrowser(async (browser) => {
     const page = await browser.newPage(withAuthState({ viewport }, options.storageState));
