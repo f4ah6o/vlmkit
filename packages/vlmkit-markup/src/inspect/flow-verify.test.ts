@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { test } from "vite-plus/test";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { runFlowVerify, type Flow } from "./flow-verify.ts";
+import { runFlowVerify, validateFlow, type Flow } from "./flow-verify.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
 const FIXTURE = join(REPO_ROOT, "fixtures/auto-markup-proof/interactive/reference.html");
@@ -116,3 +116,22 @@ test(
     }
   },
 );
+
+
+test("verify flow: native locators validate without a DOM selector", () => {
+  const flow: Flow = {
+    steps: [
+      {
+        do: { action: "click", locator: { by: "stable-id", value: "fixture.save" } },
+        expect: [
+          {
+            assert: "text",
+            locator: { by: "stable-id", value: "fixture.status" },
+            contains: "Saved",
+          },
+        ],
+      },
+    ],
+  };
+  assert.doesNotThrow(() => validateFlow(flow));
+});
