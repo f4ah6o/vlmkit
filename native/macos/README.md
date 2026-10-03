@@ -69,6 +69,22 @@ A partial capture still writes valid artifacts, and `scan a11y` reports
 using the generic tree gate: the generic format does not assert completeness.
 Native scan does not accept `--click` or browser/dump-specific options.
 
+Protocol v1 also exposes native interaction methods without opening a network listener:
+
+- `hitTest`: maps window-local screenshot pixels through the capture scale/origin and resolves the
+  exact AX element plus ancestors and a stable locator when available.
+- `perform`: executes explicit semantic or physical actions. Semantic mode supports press, focus,
+  and text-field value setting. Physical mode supports click, Unicode text/key input, and pixel
+  scrolling through CoreGraphics events.
+- stable-id, role/name, path and screenshot-point locators are explicit. Ambiguous role/name
+  locators fail with `NATIVE_LOCATOR_AMBIGUOUS`; they are never acted on implicitly.
+- optional `evidencePath` is JSONL. Typed text is redacted to `textLength`; action mode,
+  resolved target, coordinates and locator are retained.
+
+The TypeScript API `openNativeInteractionSession()` owns one target/window session and exposes
+`hitTest()`, `perform()`, and idempotent `close()`. Physical and semantic action modes remain
+distinct in both results and evidence.
+
 Validation:
 
 ```sh

@@ -322,12 +322,14 @@ final class Agent {
 
         if let locator, locator["by"] as? String == "point" {
             guard let xPx = locator["xPx"] as? Double ?? (locator["xPx"] as? NSNumber)?.doubleValue,
-                  let yPx = locator["yPx"] as? Double ?? (locator["yPx"] as? NSNumber)?.doubleValue else {
-                throw fail("NATIVE_COORDINATE_MISMATCH", "point locator requires xPx and yPx.")
+                  let yPx = locator["yPx"] as? Double ?? (locator["yPx"] as? NSNumber)?.doubleValue,
+                  let sessionId = params["sessionId"] as? String,
+                  let windowId = params["windowId"] as? String else {
+                throw fail("NATIVE_COORDINATE_MISMATCH", "point locator requires xPx/yPx and an open selected window.")
             }
             let hit = try await hitTest([
-                "sessionId": params["sessionId"] as Any,
-                "windowId": params["windowId"] as Any,
+                "sessionId": sessionId,
+                "windowId": windowId,
                 "point": ["xPx": xPx, "yPx": yPx]
             ])
             guard let node = hit["node"] as? [String: Any],
@@ -398,13 +400,14 @@ final class Agent {
             point: globalPoint
         )
         try appendActionEvidence(evidence, path: params["evidencePath"] as? String)
-        return [
+        var response: [String: Any] = [
             "ok": true,
             "mode": mode,
             "kind": kind,
-            "target": resolved?.descriptor as Any,
             "evidence": evidence
         ]
+        if let target = resolved?.descriptor { response["target"] = target }
+        return response
     }
 
     func dispatch(_ method: String, _ params: [String: Any]) async throws -> Any {

@@ -1,4 +1,4 @@
-/** Native observer transport. Capture-only Linux extensions preserve the macOS protocol. */
+/** Native observer transport, with macOS protocol-v1 hit testing/actions and Linux capture-only support. */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFile } from "node:fs/promises";
@@ -27,6 +27,86 @@ export type WindowSelector =
   | { by: "window-id"; windowId: string }
   | { by: "main" | "focused" }
   | { by: "index"; index: number };
+
+export type NativeSurfaceLocator =
+  | { by: "stable-id"; value: string }
+  | { by: "role-name"; role: string; name: string; nth?: number }
+  | { by: "path"; value: string }
+  | { by: "point"; xPx: number; yPx: number };
+
+export type NativeActionMode = "semantic" | "physical";
+
+export type NativeSurfaceAction =
+  | { kind: "press"; mode?: NativeActionMode; locator: NativeSurfaceLocator }
+  | { kind: "focus"; mode?: "semantic"; locator: NativeSurfaceLocator }
+  | { kind: "click"; mode?: "physical"; locator: NativeSurfaceLocator }
+  | { kind: "typeText"; mode?: NativeActionMode; locator: NativeSurfaceLocator; text: string }
+  | {
+      kind: "key";
+      mode?: "physical";
+      locator?: NativeSurfaceLocator;
+      keyCode: number;
+      modifiers?: Array<"command" | "shift" | "option" | "control" | "fn">;
+    }
+  | {
+      kind: "scroll";
+      mode?: "physical";
+      locator?: NativeSurfaceLocator;
+      deltaX?: number;
+      deltaY?: number;
+    };
+
+export interface NativeSurfaceNodeRef {
+  path: string;
+  role: string;
+  platformRole: string;
+  identifier?: string;
+  name?: string;
+  value?: string;
+  rect: { left: number; top: number; width: number; height: number };
+  actions: string[];
+  states?: Record<string, boolean>;
+}
+
+export interface NativeHitResult {
+  input: { xPx: number; yPx: number };
+  logical: { x: number; y: number };
+  global: { x: number; y: number };
+  node: NativeSurfaceNodeRef;
+  ancestors: NativeSurfaceNodeRef[];
+  actionable: boolean;
+  exact: boolean;
+  locator: Exclude<NativeSurfaceLocator, { by: "point" }>;
+  transform: {
+    globalWindowOriginPoints: { x: number; y: number };
+    logicalToPixelScale: number;
+  };
+}
+
+export interface NativeActionEvidence {
+  timestamp: string;
+  mode: NativeActionMode;
+  action: Record<string, unknown>;
+  target?: NativeSurfaceNodeRef;
+  globalPoint?: { x: number; y: number };
+}
+
+export interface NativeActionResult {
+  ok: true;
+  mode: NativeActionMode;
+  kind: NativeSurfaceAction["kind"];
+  target?: NativeSurfaceNodeRef;
+  evidence: NativeActionEvidence;
+}
+
+export interface NativeInteractionSession {
+  readonly sessionId: string;
+  readonly windowId: string;
+  readonly client: NativeAgentClient;
+  hitTest(point: { xPx: number; yPx: number }): Promise<NativeHitResult>;
+  perform(action: NativeSurfaceAction, options?: { evidencePath?: string }): Promise<NativeActionResult>;
+  close(options?: { terminateIfLaunched?: boolean }): Promise<void>;
+}
 export interface NativeCaptureResult {
   treePath: string;
   pngPath: string;
@@ -129,6 +209,21 @@ export class NativeAgentClient {
     this.pending.clear();
     this.process.kill();
   }
+  hitTest(params: {
+    sessionId: string;
+    windowId: string;
+    point: { xPx: number; yPx: number };
+  }): Promise<NativeHitResult> {
+    return this.request("hitTest", params);
+  }
+  perform(params: {
+    sessionId: string;
+    windowId: string;
+    action: NativeSurfaceAction;
+    evidencePath?: string;
+  }): Promise<NativeActionResult> {
+    return this.request("perform", params);
+  }
   request<T>(method: string, params: unknown = {}): Promise<T> {
     if (this.failure) return Promise.reject(this.failure);
     const id = this.nextId++;
@@ -150,6 +245,115 @@ export class NativeAgentClient {
   }
 }
 
+function nativeAgentExecutable(agent?: string): string {
+  const executable = agent ?? process.env.VLMKIT_NATIVE_AGENT;
+  if (!executable)
+    throw new UsageError(
+      "Set --native-agent (or VLMKIT_NATIVE_AGENT) to VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent. Build with native/macos/script/build_and_run.sh --build-only.",
+    );
+  return executable;
+}
+
+async function assertNativePermissions(client: NativeAgentClient): Promise<void> {
+  const hello = await client.request<{ protocol: number }>("hello");
+  if (hello.protocol !== 1)
+    throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
+  const doctor = await client.request<{
+    accessibility: { trusted: boolean };
+    screenCapture: { authorized: boolean };
+  }>("doctor", { prompt: false });
+  if (!doctor.accessibility.trusted)
+    throw new NativeAgentError(
+      "NATIVE_PERMISSION_ACCESSIBILITY",
+      "Allow the observer in System Settings > Privacy & Security > Accessibility.",
+    );
+  if (!doctor.screenCapture.authorized)
+    throw new NativeAgentError(
+      "NATIVE_PERMISSION_SCREEN_CAPTURE",
+      "Allow the observer in System Settings > Privacy & Security > Screen Recording.",
+    );
+}
+
+async function selectNativeWindow(options: {
+  client: NativeAgentClient;
+  sessionId: string;
+  selector?: WindowSelector;
+  launch?: boolean;
+  timeout?: number;
+}): Promise<{ windowId: string }> {
+  const deadline = Date.now() + (options.timeout ?? 30000);
+  while (true) {
+    try {
+      return await options.client.request<{ windowId: string }>("window.select", {
+        sessionId: options.sessionId,
+        selector: options.selector,
+      });
+    } catch (error) {
+      if (
+        !options.launch ||
+        !(error instanceof NativeAgentError) ||
+        !["NATIVE_WINDOW_NOT_FOUND", "NATIVE_AX_CANNOT_COMPLETE"].includes(error.code) ||
+        Date.now() >= deadline
+      )
+        throw error;
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    }
+  }
+}
+
+export async function openNativeInteractionSession(options: {
+  source: string;
+  agent?: string;
+  launch?: boolean;
+  window?: string;
+  timeout?: number;
+}): Promise<NativeInteractionSession> {
+  if (process.platform !== "darwin") throw new UsageError("Native macOS interaction requires a macOS host.");
+  const client = new NativeAgentClient(nativeAgentExecutable(options.agent), options.timeout);
+  let sessionId: string | undefined;
+  try {
+    await assertNativePermissions(client);
+    const target = macTarget(options.source, options.launch);
+    ({ sessionId } = await client.request<{ sessionId: string }>("target.open", { target }));
+    const window = await selectNativeWindow({
+      client,
+      sessionId,
+      selector: macWindow(options.window),
+      launch: options.launch,
+      timeout: options.timeout,
+    });
+    let closed = false;
+    return {
+      sessionId,
+      windowId: window.windowId,
+      client,
+      hitTest: (point) => client.hitTest({ sessionId: sessionId!, windowId: window.windowId, point }),
+      perform: (action, performOptions) =>
+        client.perform({
+          sessionId: sessionId!,
+          windowId: window.windowId,
+          action,
+          ...(performOptions?.evidencePath ? { evidencePath: resolve(performOptions.evidencePath) } : {}),
+        }),
+      async close(closeOptions) {
+        if (closed) return;
+        closed = true;
+        await client
+          .request("session.close", {
+            sessionId: sessionId!,
+            terminateIfLaunched: closeOptions?.terminateIfLaunched ?? false,
+          })
+          .catch(() => {});
+        client.close();
+      },
+    };
+  } catch (error) {
+    if (sessionId) await client.request("session.close", { sessionId }).catch(() => {});
+    client.close();
+    throw error;
+  }
+}
+
 export async function captureNativeA11y(options: {
   source: string;
   out: string;
@@ -168,75 +372,62 @@ export async function captureNativeA11y(options: {
     throw new UsageError(
       linux ? "Native Linux scan requires a Linux host." : "Native macOS scan requires a macOS host.",
     );
-  const executable = options.agent ?? process.env.VLMKIT_NATIVE_AGENT;
+  const executable = linux ? (options.agent ?? process.env.VLMKIT_NATIVE_AGENT) : nativeAgentExecutable(options.agent);
   if (!executable)
     throw new UsageError(
-      linux
-        ? "Set --native-agent (or VLMKIT_NATIVE_AGENT) to native/linux/observer.py. See native/linux/README.md for runtime dependencies."
-        : "Set --native-agent (or VLMKIT_NATIVE_AGENT) to VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent. Build with native/macos/script/build_and_run.sh --build-only.",
+      "Set --native-agent (or VLMKIT_NATIVE_AGENT) to native/linux/observer.py. See native/linux/README.md for runtime dependencies.",
     );
   const target = linux ? linuxTarget(options.source, options.launch) : macTarget(options.source, options.launch);
   const selector = macWindow(options.window);
   const client = new NativeAgentClient(executable, options.timeout);
   let sessionId: string | undefined;
   try {
-    const hello = await client.request<{
-      protocol: number;
-      platform?: string;
-      backend?: string;
-      capabilities?: {
-        accessibility?: boolean;
-        screenCapture?: boolean;
-        physicalPointer?: boolean;
-        physicalKeyboard?: boolean;
-      };
-    }>("hello");
-    if (hello.protocol !== 1)
-      throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
-    if (
-      linux &&
-      (hello.platform !== "linux" ||
+    if (linux) {
+      const hello = await client.request<{
+        protocol: number;
+        platform?: string;
+        backend?: string;
+        capabilities?: {
+          accessibility?: boolean;
+          screenCapture?: boolean;
+          physicalPointer?: boolean;
+          physicalKeyboard?: boolean;
+        };
+      }>("hello");
+      if (hello.protocol !== 1)
+        throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
+      if (
+        hello.platform !== "linux" ||
         hello.backend !== "x11" ||
         hello.capabilities?.physicalPointer !== false ||
-        hello.capabilities?.physicalKeyboard !== false)
-    )
-      throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "Expected Linux X11 observer-only capabilities.");
-    const doctor = await client.request<{
-      accessibility: { trusted?: boolean; available?: boolean };
-      screenCapture: { authorized?: boolean; available?: boolean };
-    }>("doctor", { prompt: false });
-    if (!(linux ? doctor.accessibility.available : doctor.accessibility.trusted))
-      throw new NativeAgentError(
-        "NATIVE_PERMISSION_ACCESSIBILITY",
-        linux
-          ? "Linux AT-SPI is unavailable. Run the observer in the target app’s accessible desktop session; see native/linux/README.md."
-          : "Allow the observer in System Settings > Privacy & Security > Accessibility.",
-      );
-    if (!(linux ? doctor.screenCapture.available : doctor.screenCapture.authorized))
-      throw new NativeAgentError(
-        "NATIVE_PERMISSION_SCREEN_CAPTURE",
-        linux
-          ? "Linux X11 selected-window capture is unavailable; Wayland is not admitted by this observer."
-          : "Allow the observer in System Settings > Privacy & Security > Screen Recording.",
-      );
-    ({ sessionId } = await client.request<{ sessionId: string }>("target.open", { target }));
-    const deadline = Date.now() + (options.timeout ?? 30000);
-    let window: { windowId: string };
-    while (true) {
-      try {
-        window = await client.request<{ windowId: string }>("window.select", { sessionId, selector });
-        break;
-      } catch (error) {
-        if (
-          !options.launch ||
-          !(error instanceof NativeAgentError) ||
-          !["NATIVE_WINDOW_NOT_FOUND", "NATIVE_AX_CANNOT_COMPLETE"].includes(error.code) ||
-          Date.now() >= deadline
-        )
-          throw error;
-        await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-      }
+        hello.capabilities?.physicalKeyboard !== false
+      )
+        throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "Expected Linux X11 observer-only capabilities.");
+      const doctor = await client.request<{
+        accessibility: { trusted?: boolean; available?: boolean };
+        screenCapture: { authorized?: boolean; available?: boolean };
+      }>("doctor", { prompt: false });
+      if (!doctor.accessibility.available)
+        throw new NativeAgentError(
+          "NATIVE_PERMISSION_ACCESSIBILITY",
+          "Linux AT-SPI is unavailable. Run the observer in the target app’s accessible desktop session; see native/linux/README.md.",
+        );
+      if (!doctor.screenCapture.available)
+        throw new NativeAgentError(
+          "NATIVE_PERMISSION_SCREEN_CAPTURE",
+          "Linux X11 selected-window capture is unavailable; Wayland is not admitted by this observer.",
+        );
+    } else {
+      await assertNativePermissions(client);
     }
+    ({ sessionId } = await client.request<{ sessionId: string }>("target.open", { target }));
+    const window = await selectNativeWindow({
+      client,
+      sessionId,
+      selector,
+      launch: options.launch,
+      timeout: options.timeout,
+    });
     const agentCapture = await client.request<Omit<NativeCaptureResult, "contentPolicy">>("snapshot.capture", {
       sessionId,
       windowId: window.windowId,

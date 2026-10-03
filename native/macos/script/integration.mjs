@@ -165,6 +165,83 @@ try {
       `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}"><image href="a11y.png" width="${frame.width}" height="${frame.height}"/><rect x="${save.rect.left * tree.scale}" y="${save.rect.top * tree.scale}" width="${save.rect.width * tree.scale}" height="${save.rect.height * tree.scale}" fill="none" stroke="red" stroke-width="2"/></svg>`,
     );
     const selected = await client.request("window.select", { sessionId });
+
+    // P2: screenshot pixels resolve to the semantic Save element, and the same point can be clicked physically.
+    const savePoint = {
+      xPx: Math.round((save.rect.left + save.rect.width / 2) * tree.scale),
+      yPx: Math.round((save.rect.top + save.rect.height / 2) * tree.scale),
+    };
+    const hit = await client.request("hitTest", {
+      sessionId,
+      windowId: selected.windowId,
+      point: savePoint,
+    });
+    assert.equal(hit.node.identifier, "fixture.save");
+    assert.equal(hit.locator.by, "stable-id");
+    assert.equal(hit.locator.value, "fixture.save");
+    assert.equal(hit.actionable, true);
+
+    const evidencePath = resolve(out, "actions.jsonl");
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: { kind: "click", mode: "physical", locator: { by: "point", ...savePoint } },
+    });
+    await delay();
+
+    // Semantic press and text setting share the same locator contract.
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: { kind: "press", mode: "semantic", locator: { by: "stable-id", value: "fixture.remember" } },
+    });
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: {
+        kind: "typeText",
+        mode: "semantic",
+        locator: { by: "stable-id", value: "fixture.name" },
+        text: "Grace",
+      },
+    });
+    await delay();
+
+    // Ambiguous locators fail before input. The two Duplicate buttons are intentionally identical by role/name.
+    await assert.rejects(
+      client.request("perform", {
+        sessionId,
+        windowId: selected.windowId,
+        evidencePath,
+        action: { kind: "press", mode: "semantic", locator: { by: "role-name", role: "button", name: "Duplicate" } },
+      }),
+      /NATIVE_LOCATOR_AMBIGUOUS/,
+    );
+
+    const afterActions = await client.request("snapshot.capture", {
+      sessionId,
+      windowId: selected.windowId,
+      outputTreePath: resolve(out, "after-actions.json"),
+      outputPngPath: resolve(out, "after-actions.png"),
+    });
+    const actionTree = parseA11yTree(await readFile(afterActions.treePath, "utf8"));
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.status")?.name, "Saved 1");
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.remember")?.states.checked, false);
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.name")?.value, "Grace");
+
+    const evidenceLines = (await readFile(evidencePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.ok(evidenceLines.some((entry) => entry.mode === "physical" && entry.action.kind === "click"));
+    assert.ok(evidenceLines.some((entry) => entry.mode === "semantic" && entry.action.kind === "typeText"));
+    assert.doesNotMatch(await readFile(evidencePath, "utf8"), /Grace/);
+    assert.ok(evidenceLines.some((entry) => entry.action.kind === "typeText" && entry.action.textLength === 5));
+    results.push({
+      check: "P2 hit test, physical click, semantic press/text, ambiguous locator, redacted action evidence",
+      pass: true,
+    });
+
     const truncated = await client.request("snapshot.capture", {
       sessionId,
       windowId: selected.windowId,
