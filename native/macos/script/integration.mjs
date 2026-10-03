@@ -10,6 +10,10 @@ import { runScanA11y } from "@mizchi/vlmkit-markup/a11y-tree/scan-a11y.ts";
 import { runCheckA11yTree } from "@mizchi/vlmkit-markup/a11y-tree/check-a11y-tree.ts";
 import { parseA11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 import { decodePng } from "@mizchi/vlmkit-core/png-utils.ts";
+import { runGroundingScan } from "@mizchi/vlmkit-markup/inspect/grounding-scan.ts";
+import { buildNativeInteractionMap } from "@mizchi/vlmkit-markup/native/native-surface.ts";
+import { runFlowVerify } from "@mizchi/vlmkit-markup/inspect/flow-verify.ts";
+import { runNativeSnapshotCli } from "../../../src/vrt/snapshot/native-snapshot.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const app = resolve(root, "native/macos/dist/VLMKitAXFixture.app");
 const agent = resolve(root, "native/macos/dist/VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent");
@@ -297,6 +301,92 @@ try {
     }
     assert.ok(exited);
     results.push({ check: "terminated target", pass: true });
+  });
+  await fixture([], async ({ pid }) => {
+    const source = `macos:pid=${pid}`;
+    const grounding = await runGroundingScan({
+      source,
+      nativeAgent: agent,
+      markPath: resolve(out, "grounding-marked.png"),
+      at: [{ x: 80, y: 80 }],
+    });
+    assert.ok(grounding.targets.some((target) => target.label === "Save"));
+    assert.ok(grounding.probes?.length === 1);
+
+    const interactions = await buildNativeInteractionMap({
+      source,
+      nativeAgent: agent,
+      maxElements: 30,
+    });
+    assert.ok(interactions.elements.some((element) => element.name === "Save"));
+    assert.equal(interactions.capped, 0);
+
+    const snapshotDir = resolve(out, "snapshot");
+    const firstSnapshot = await runNativeSnapshotCli([
+      source,
+      "--native-agent",
+      agent,
+      "--output",
+      snapshotDir,
+      "--label",
+      "fixture",
+    ]);
+    assert.equal(firstSnapshot, 0);
+    const secondSnapshot = await runNativeSnapshotCli([
+      source,
+      "--native-agent",
+      agent,
+      "--output",
+      snapshotDir,
+      "--label",
+      "fixture",
+      "--fail-on-diff",
+    ]);
+    assert.equal(secondSnapshot, 0);
+
+    const flow = await runFlowVerify({
+      source,
+      nativeAgent: agent,
+      artifactDir: resolve(out, "flow"),
+      flow: {
+        steps: [
+          {
+            label: "save",
+            do: { action: "click", locator: { by: "stable-id", value: "fixture.save" } },
+            expect: [
+              {
+                assert: "text",
+                locator: { by: "stable-id", value: "fixture.status" },
+                contains: "Saved",
+              },
+            ],
+          },
+          {
+            label: "edit name",
+            do: {
+              action: "fill",
+              locator: { by: "stable-id", value: "fixture.name" },
+              value: "Lin",
+            },
+            expect: [
+              {
+                assert: "attr",
+                locator: { by: "stable-id", value: "fixture.name" },
+                name: "value",
+                equals: "Lin",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal(flow.done, true);
+    assert.equal(flow.steps.length, 2);
+    assert.ok(flow.steps.every((step) => step.evidence?.screenshotPath && step.evidence?.treePath));
+    results.push({
+      check: "P3 grounding, interactions, VRT+a11y snapshot, portable native flow",
+      pass: true,
+    });
   });
   await fixture(["--unchecked", "--duplicate-identifiers"], async ({ sessionId }) => {
     const window = await client.request("window.select", { sessionId });
