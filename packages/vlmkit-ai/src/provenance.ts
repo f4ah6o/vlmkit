@@ -129,24 +129,46 @@ export function sanitizePngForExternalAi(
   }
   const png = PNG.sync.read(Buffer.from(normalized.base64, "base64"));
   const fill = options?.fill ?? [0, 0, 0, 255];
+  if (regions.length === 0) {
+    throw new VrtConfigError("INVALID_REQUEST", "sanitizePngForExternalAi: at least one restricted region is required");
+  }
 
+  let changedPixels = 0;
   for (const region of regions) {
     if (![region.left, region.top, region.width, region.height].every(Number.isFinite)) {
       throw new VrtConfigError("INVALID_REQUEST", "sanitizePngForExternalAi: region coordinates must be finite");
+    }
+    if (region.width <= 0 || region.height <= 0) {
+      throw new VrtConfigError("INVALID_REQUEST", "sanitizePngForExternalAi: region width and height must be positive");
     }
     const left = Math.max(0, Math.floor(region.left));
     const top = Math.max(0, Math.floor(region.top));
     const right = Math.min(png.width, Math.ceil(region.left + region.width));
     const bottom = Math.min(png.height, Math.ceil(region.top + region.height));
+    if (right <= left || bottom <= top) {
+      throw new VrtConfigError("INVALID_REQUEST", "sanitizePngForExternalAi: region must intersect the image");
+    }
     for (let y = top; y < bottom; y++) {
       for (let x = left; x < right; x++) {
         const i = (y * png.width + x) * 4;
+        if (
+          png.data[i] !== fill[0] ||
+          png.data[i + 1] !== fill[1] ||
+          png.data[i + 2] !== fill[2] ||
+          png.data[i + 3] !== fill[3]
+        ) {
+          changedPixels++;
+        }
         png.data[i] = fill[0];
         png.data[i + 1] = fill[1];
         png.data[i + 2] = fill[2];
         png.data[i + 3] = fill[3];
       }
     }
+  }
+
+  if (changedPixels === 0) {
+    throw new VrtConfigError("INVALID_REQUEST", "sanitizePngForExternalAi: sanitization changed no pixels");
   }
 
   return {
