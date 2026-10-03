@@ -152,6 +152,22 @@ describe("stage 1 — VLM reply to a structured report", () => {
     assert.equal(calls.filter((call) => !call.url.includes("/models")).length, 0);
   });
 
+  it("blocks restricted textReport before any VLM transport", async () => {
+    serve([recorded("stage1-openrouter")]);
+    const pipeline = createReasoningPipeline()!;
+    await assert.rejects(
+      () =>
+        pipeline.analyze({
+          heatmapBase64: PIXEL,
+          contentProvenance: "app_owned",
+          textReport: "POISON_DO_NOT_EGRESS",
+          textReportProvenance: "restricted_content",
+        }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls.length, 0);
+  });
+
   it("parses the CHANGE lines, deduplicates, and reads SUMMARY / REGRESSION", async () => {
     serve([recorded("stage1-openrouter")]);
     const pipeline = createReasoningPipeline()!;
@@ -200,7 +216,11 @@ describe("stage 1 — VLM reply to a structured report", () => {
   it("refuses to analyze with no image at all", async () => {
     serve([recorded("stage1-openrouter")]);
     await assert.rejects(
-      () => createReasoningPipeline()!.analyze({ textReport: "something changed" }),
+      () =>
+        createReasoningPipeline()!.analyze({
+          textReport: "something changed",
+          textReportProvenance: "app_owned",
+        }),
       /No image data provided/,
     );
   });
@@ -215,6 +235,23 @@ describe("stage 1 — VLM reply to a structured report", () => {
     const sent = JSON.stringify(calls.filter((c) => !c.url.includes("/models"))[0]!.body);
     assert.match(sent, /Global vertical shift/);
     assert.match(sent, /SHIFT ONLY/, "the instruction that redirects it to layout properties");
+  });
+});
+
+describe("stage 1 — LLM-only fallback provenance", () => {
+  it("blocks restricted textReport before fallback transport", async () => {
+    process.env.ANTHROPIC_API_KEY = "anthropic-key";
+    serve([recorded("stage1-openrouter")]);
+    const pipeline = createReasoningPipeline({ llmProvider: "anthropic" })!;
+    await assert.rejects(
+      () =>
+        pipeline.analyze({
+          textReport: "POISON_DO_NOT_EGRESS",
+          textReportProvenance: "restricted_content",
+        }),
+      (error: unknown) => error instanceof VrtConfigError && error.code === "EXTERNAL_AI_POLICY",
+    );
+    assert.equal(calls.length, 0);
   });
 });
 
