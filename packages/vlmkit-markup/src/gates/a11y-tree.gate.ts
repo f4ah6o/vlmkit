@@ -71,7 +71,7 @@ function formatScanA11y(report: ScanA11yReport, rules?: RuleView): string {
 export const a11yScanGate = defineGate<ScanA11yReport, ScanA11yOptions>({
   id: "scan.a11y",
   command: ["scan", "a11y"],
-  title: "Accessibility tree snapshot (Flutter web, Android, macOS)",
+  title: "Accessibility tree snapshot (Flutter web, Android, macOS, Linux X11)",
   summary: "Write a platform's accessibility tree and its frame for check a11y tree",
   category: "correctness",
   usage: `Collects an accessibility tree as vlmkit-a11y/1 JSON plus the frame it was
@@ -96,6 +96,11 @@ macOS (observer only; macOS 14+)
   Permissions are checked passively. --launch opts into launching a target.
   Captures full window bounds without shadows, in local logical points.
 
+Linux composited X11 (observer only; attach by PID)
+    vlmkit scan a11y linux:pid=123 --native-agent /path/vlmkit/native/linux/observer.py --out a11y.json
+  Requires existing composited backing; captures the exact client window with AT-SPI semantics. No physical input.
+  Wayland and missing accessibility/capture capabilities fail closed.
+
 Any other platform (Windows UIA, iOS, a Flutter desktop semantics
 dump) writes the same JSON with its own tool — docs/a11y-tree.md has the
 contract. Then: vlmkit check a11y tree a11y.json`,
@@ -112,9 +117,9 @@ contract. Then: vlmkit check a11y tree a11y.json`,
   inputs: [
     {
       name: "source",
-      placeholder: "url|page.html|dump.xml|macos:target",
+      placeholder: "url|page.html|dump.xml|macos:target|linux:pid=N",
       kind: "path-or-url",
-      description: "Flutter web page, uiautomator dump, or macos: target",
+      description: "Flutter web page, uiautomator dump, or macos:/linux: target",
       positional: 0,
       required: true,
     },
@@ -173,19 +178,23 @@ contract. Then: vlmkit check a11y tree a11y.json`,
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
-    const source = firstPositional(argv, "vlmkit scan a11y <url|page.html|dump.xml|macos:target> [--out a11y.json]", [
-      "--out",
-      "--frame",
-      "--viewport",
-      "--click",
-      "--density",
-      "--locale",
-      "--storage-state",
-      "--native-agent",
-      "--window",
-      "--max-depth",
-      "--max-nodes",
-    ]);
+    const source = firstPositional(
+      argv,
+      "vlmkit scan a11y <url|page.html|dump.xml|macos:target|linux:pid=N> [--out a11y.json]",
+      [
+        "--out",
+        "--frame",
+        "--viewport",
+        "--click",
+        "--density",
+        "--locale",
+        "--storage-state",
+        "--native-agent",
+        "--window",
+        "--max-depth",
+        "--max-nodes",
+      ],
+    );
     const bounded = (name: string, min: number, max: number) => {
       const raw = readFlag(argv, name);
       if (raw === undefined) return undefined;
@@ -201,9 +210,10 @@ contract. Then: vlmkit check a11y tree a11y.json`,
     const launch = hasFlag(argv, "launch");
     if (
       !source.startsWith("macos:") &&
+      !source.startsWith("linux:") &&
       (nativeAgent || window || maxDepth !== undefined || maxNodes !== undefined || launch)
     )
-      throw new UsageError("Native options require a macos: source.");
+      throw new UsageError("Native options require a macos: or linux: source.");
     const densityRaw = readFlag(argv, "density");
     const density = densityRaw === undefined ? undefined : Number(densityRaw);
     if (density !== undefined && !(density > 0))

@@ -164,7 +164,7 @@ export async function runScanA11y(options: ScanA11yOptions): Promise<ScanA11yRep
   let redirect: string | null = null;
   let frame: string | null;
   let native: NativeCaptureResult | undefined;
-  if (options.source.startsWith("macos:")) {
+  if (options.source.startsWith("macos:") || options.source.startsWith("linux:")) {
     if (
       options.clicks?.length ||
       options.density !== undefined ||
