@@ -70,3 +70,13 @@ Pure tests do not establish live desktop acceptance. Review the integration
 report and CI result before treating the backend as accepted. GPUI/other toolkit
 accessibility exposure, decorated windows, scaling and Wayland need separate
 acceptance evidence and are not inferred from GTK/Xvfb.
+
+
+## Observed profile
+
+The Ubuntu 24.04 / Xvfb / xcompmgr / GTK3 scale-1 fixture profile passed hosted
+observation and actual TypeScript scan-to-generic-judge acceptance at source
+`96249baad0b7e7c499f1f797db92bcd29a3d078c`.
+See the [acceptance report](../../docs/reports/2026-10-05-linux-native-observer.md)
+for exact versions, tests and retained artifact. This is not a general desktop,
+Wayland, GPUI/MZed or physical-input support claim.

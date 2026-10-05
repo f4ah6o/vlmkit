@@ -1,6 +1,7 @@
 # Linux native observer and support admission
 
-Status: implementation in review; live profile acceptance required before support promotion.
+Status: implementation in review; bounded GTK/Xvfb/xcompmgr fixture acceptance passed.
+Broader Linux profiles remain subject to their own admission evidence.
 
 Linux native is a first-class target alongside macOS. Eventual application/tool support
 covers macOS, Linux and Windows. New Windows work is deferred until higher-priority
@@ -25,7 +26,7 @@ Record implementation and actual acceptance separately for each profile:
 | Profile | Observer | Physical input |
 | --- | --- | --- |
 | macOS 14+ AX/ScreenCaptureKit | Existing fixture evidence; preserve regression tests | PR #2 remains separately gated |
-| Linux composited X11 AT-SPI/XComposite, scale 1 | This implementation; exact test environment/evidence in report | Unsupported |
+| Linux composited X11 AT-SPI/XComposite, scale 1 | GTK/Xvfb/xcompmgr fixture PASS; [exact evidence](../../docs/reports/2026-10-05-linux-native-observer.md) | Unsupported |
 | X11 other WMs, toolkits, scale factors | Unqualified until corresponding runs | Unsupported |
 | Linux Wayland, named compositor/portal versions | Follow-up required | Unsupported |
 | XWayland | Separate qualification required | Unsupported |

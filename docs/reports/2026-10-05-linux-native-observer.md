@@ -1,6 +1,7 @@
 # Initial Linux X11 observer — 2026-10-05
 
-Status: implementation in review; native live acceptance pending.
+Status: bounded hosted X11 fixture acceptance PASS; implementation remains in draft review.
+Broader desktop/toolkit, real GPUI/MZed and Wayland acceptance remain pending.
 
 This slice introduces an external, read-only PID-attached composited X11/AT-SPI observer.
 It does not implement physical or semantic actions, Wayland, XWayland admission,
@@ -56,3 +57,45 @@ tested PR head `bbd61e933f1a6f298caade8e77ff2c8a940fa485` as synthetic merge
 
 Subsequent evidence must identify the repaired exact head; the first run is kept
 as failure provenance, not relabelled as a successful fixture run.
+
+
+## Verified hosted acceptance
+
+[Run 37249754224](https://github.com/f4ah6o/vlmkit/actions/runs/37249754224)
+passed both `observer` and `transport` jobs for source head
+`96249baad0b7e7c499f1f797db92bcd29a3d078c`, tested as synthetic PR merge
+`6f97ce0966c314ff0537451e7f4f9123e1d8cef4` into base
+`4be3177a62d8a3304e1cb09958dc5deab92d7eff`. This records observed evidence;
+it does not imply the draft PR has merged.
+
+Profile: Ubuntu 24.04.5 x86-64 hosted image `20260927.320.1`, Xvfb
+`2:21.1.12-1ubuntu1.8`, xcompmgr `1.1.8-1`, AT-SPI core `2.52.0-1build1`,
+GTK3 introspection `3.24.41-4ubuntu1.3`, Node `24.21.0`, pnpm `10.34.6`,
+MoonBit compiler/core `0.10.14+7d59c7ec9`. Isolated 1280x1024 depth-24 X11
+display; selected opaque undecorated GTK fixture client is 360x260 at scale 1.
+
+Observed results:
+
+- 11 Python contract tests passed.
+- Live Python fixture passed all nine assertions: same-PID duplicate-title
+  window association, stable toolkit identifier, client geometry, semantic-rect
+  pixel alignment, foreign green occluder excluded from the red target capture,
+  bounded traversal, selected-window binding, denied physical input, detach-only close.
+- Complete capture: seven nodes, zero truncated branches, zero attribute errors.
+- Actual TypeScript `runScanA11y` on a separate live GTK fixture and the unchanged
+  generic judge passed, including detection of the planted unnamed button.
+  The live job passed all nine Linux tests with no skip.
+- Transport job passed 21 Linux/macOS tests; its one live-only test is intentionally
+  skipped because the separate observer job owns the provisioned desktop.
+
+[Retained tree/PNG/report artifact 11319932949](https://github.com/f4ah6o/vlmkit/actions/runs/37249754224/artifacts/11319932949):
+10,700 bytes, SHA-256
+`a0943d43829b8e9906be5aff03d7051945b96db9efb6696862f266387303ba25`.
+Artifacts expire on 2026-10-19; the provenance and checked acceptance code remain.
+This artifact contains only controlled fixture windows. Pixel assertions were
+executed by the retained integration runner; no manual screenshot review is claimed.
+
+This admits the named fixture observation profile only. It does not establish
+physical input safety, compositor-independent Linux support, GTK/Qt application
+coverage, accessibility in GPUI/MZed, HiDPI/fractional coordinates, or Wayland.
+Whole-repository base-check failures still require their separate repair.
