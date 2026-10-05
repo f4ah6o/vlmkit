@@ -247,12 +247,33 @@ class XImage(C.Structure):
                 ('red_mask', U), ('green_mask', U), ('blue_mask', U)]
 
 
-def png_from_ximage(im):
+class XVisualInfo(C.Structure):
+    # Public Xutil.h record returned by XGetVisualInfo, not opaque Visual internals.
+    _fields_ = [('visual', P), ('visualid', U), ('screen', I), ('depth', I),
+                ('class_', I), ('red_mask', U), ('green_mask', U), ('blue_mask', U),
+                ('colormap_size', I), ('bits_per_rgb', I)]
+
+
+def png_from_ximage(im, visual=None):
     """Encode only common TrueColor formats. Never guess unsupported pixel layouts."""
+    image_masks = (im.red_mask, im.green_mask, im.blue_mask)
+    layout = dict(depth=im.depth, bitsPerPixel=im.bits_per_pixel, byteOrder=im.byte_order,
+                  imageMasks=image_masks, selectedVisual=visual)
     if im.bits_per_pixel not in (24, 32) or im.byte_order not in (0, 1) or im.depth != 24:
-        fail('NATIVE_SCREENSHOT_FAILED', 'Unsupported X11 pixel layout')
-    if (im.red_mask, im.green_mask, im.blue_mask) != (0xff0000, 0xff00, 0xff):
-        fail('NATIVE_SCREENSHOT_FAILED', 'Unsupported X11 color masks')
+        fail('NATIVE_SCREENSHOT_FAILED', 'Unsupported X11 pixel layout: ' + repr(layout))
+    masks = image_masks
+    if visual is not None:
+        if (visual.get('class') != 4 or visual.get('depth') != im.depth or
+                visual.get('bitsPerRgb') != 8 or visual.get('colormapSize') != 256 or
+                tuple(visual.get('masks', ())) != (0xff0000, 0xff00, 0xff)):
+            fail('NATIVE_SCREENSHOT_FAILED', 'Unsupported selected-window TrueColor visual: ' + repr(layout))
+        # XGetImage on a Pixmap has no associated Visual and may return zero
+        # masks. Only the selected window's verified Visual may supply them.
+        masks = tuple(visual['masks'])
+        if image_masks not in ((0, 0, 0), masks):
+            fail('NATIVE_SCREENSHOT_FAILED', 'Image and selected-window visual masks disagree: ' + repr(layout))
+    if masks != (0xff0000, 0xff00, 0xff):
+        fail('NATIVE_SCREENSHOT_FAILED', 'Unsupported X11 color masks: ' + repr(layout))
     step = im.bits_per_pixel // 8
     if im.bytes_per_line < im.width * step or im.bytes_per_line > im.width * step + 16:
         fail('NATIVE_SCREENSHOT_FAILED', 'Invalid X11 image stride')
@@ -367,6 +388,29 @@ class X11:
             fail('NATIVE_COMPOSITOR_UNAVAILABLE', 'An existing X11 compositing manager is required; observer never redirects windows')
         return owner
 
+    def visual(self, xid):
+        attributes = XAttributes()
+        ok = self.fn('XGetWindowAttributes', I, U, C.POINTER(XAttributes))(xid, C.byref(attributes))
+        self.sync()
+        if not ok or not attributes.visual:
+            fail('NATIVE_SCREENSHOT_FAILED', 'Selected window has no readable Visual')
+        visual_id = bind(self.lib, 'XVisualIDFromVisual', U, P)(attributes.visual)
+        template, count = XVisualInfo(visualid=visual_id), I()
+        ptr = self.fn('XGetVisualInfo', P, C.c_long, C.POINTER(XVisualInfo), C.POINTER(I))(1, C.byref(template), C.byref(count))
+        self.sync()
+        try:
+            if not ptr or count.value != 1:
+                fail('NATIVE_SCREENSHOT_FAILED', 'Selected Visual ID did not resolve uniquely')
+            v = C.cast(ptr, C.POINTER(XVisualInfo)).contents
+            if v.visualid != visual_id or v.depth != attributes.depth:
+                fail('NATIVE_SCREENSHOT_FAILED', 'Selected window and Visual identity/depth disagree')
+            return dict(id=visual_id, depth=v.depth, **{'class': v.class_},
+                        masks=(v.red_mask, v.green_mask, v.blue_mask),
+                        bitsPerRgb=v.bits_per_rgb, colormapSize=v.colormap_size)
+        finally:
+            if ptr:
+                bind(self.lib, 'XFree', I, P)(ptr)
+
     def capture(self, xid, pid, expected, compositor):
         pixmap, image = 0, None
         self.fn('XGrabServer', I)()
@@ -376,6 +420,7 @@ class X11:
             if self.pid(xid) != pid or self.geometry(xid) != expected:
                 fail('NATIVE_WINDOW_CHANGED', 'Selected X11 owner or geometry changed')
             self.assert_descendants_owned(xid, pid)
+            visual = self.visual(xid)
             pixmap = bind(self.composite, 'XCompositeNameWindowPixmap', U, P, U)(self.display, xid)
             self.sync()
             if not pixmap:
@@ -393,7 +438,7 @@ class X11:
             im = C.cast(image, C.POINTER(XImage)).contents
             if (im.width, im.height) != (expected['width'], expected['height']):
                 fail('NATIVE_COORDINATE_MISMATCH', 'Pixmap dimensions differ from selected client geometry')
-            return png_from_ximage(im)
+            return png_from_ximage(im, visual)
         finally:
             if image:
                 bind(self.lib, 'XDestroyImage', I, P)(image)

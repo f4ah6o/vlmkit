@@ -9,6 +9,7 @@ import struct
 import subprocess
 import sys
 import time
+import traceback
 import zlib
 
 HERE = Path(__file__).resolve().parent
@@ -18,6 +19,7 @@ class Client:
     def __init__(self):
         self.process = subprocess.Popen([sys.executable, str(HERE / 'observer.py')], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         self.serial = 0
+        self.history = []
 
     def request(self, method, params=None, error=None):
         self.serial += 1
@@ -27,6 +29,7 @@ class Client:
         raw = self.process.stdout.readline()
         assert raw, f'Observer exited during {method}'
         response = json.loads(raw)
+        self.history.append(dict(method=method, response=response))
         assert response['id'] == self.serial
         if error:
             assert not response['ok'] and response['error']['code'] == error, response
@@ -125,6 +128,10 @@ def main():
         report.update(passed=True, hello=hello, doctor=doctor, capture=result)
         (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         print(json.dumps(report, indent=2))
+    except Exception as error:
+        report.update(passed=False, error=str(error), traceback=traceback.format_exc(), protocol=client.history)
+        (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        raise
     finally:
         for p in (foreign, app):
             if p and p.poll() is None:

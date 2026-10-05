@@ -82,6 +82,23 @@ class ObserverTests(unittest.TestCase):
         with self.assertRaises(o.Failure):
             o.png_from_ximage(image)
 
+    def test_pixmap_zero_masks_require_verified_selected_visual(self):
+        raw = C.create_string_buffer(bytes([30, 20, 10, 0]))
+        image = o.XImage(width=1, height=1, data=C.cast(raw, o.P), byte_order=0,
+                         depth=24, bytes_per_line=4, bits_per_pixel=32)
+        visual = dict(depth=24, **{'class': 4}, bitsPerRgb=8, colormapSize=256,
+                      masks=(0xff0000, 0xff00, 0xff))
+        png = o.png_from_ximage(image, visual)
+        size = struct.unpack('!I', png[33:37])[0]
+        self.assertEqual(zlib.decompress(png[41:41 + size]), bytes([0, 10, 20, 30]))
+        for invalid in [None, dict(visual, **{'class': 5}), dict(visual, depth=32),
+                        dict(visual, masks=(0, 0, 0)), dict(visual, bitsPerRgb=6)]:
+            with self.assertRaises(o.Failure):
+                o.png_from_ximage(image, invalid)
+        image.red_mask, image.green_mask, image.blue_mask = 0xff, 0xff00, 0xff0000
+        with self.assertRaisesRegex(o.Failure, 'disagree'):
+            o.png_from_ximage(image, visual)
+
     def test_traversal_bounds_identifiers_negative_origin(self):
         class Fake:
             def pid(self, obj): return 100 if obj != 5 else 101

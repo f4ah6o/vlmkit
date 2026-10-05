@@ -32,6 +32,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install pinned MoonBit for generic accessibility judges
+        uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
       - name: Build artifact consumers
         run: |
           pnpm exec vp pack --filter @mizchi/vlmkit-judge
@@ -67,6 +72,11 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Install pinned MoonBit for generic accessibility judges
+        uses: hustcer/setup-moonbit@1522f9aef02a8ca0187dfc00a41f5dd6b16750f7
+        with:
+          version: 0.10.14+7d59c7ec9
+          core-version: 0.10.14+7d59c7ec9
       - name: Build artifact consumers
         run: |
           pnpm exec vp pack --filter @mizchi/vlmkit-judge

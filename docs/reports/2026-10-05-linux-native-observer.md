@@ -38,3 +38,21 @@ containing occluder pixels. The implementation therefore requires an existing
 compositor and named backing, refuses unavailable/changed compositor identity,
 and never creates or removes window redirection. CI starts the compositor before
 the fixture and retains the strict red-target/green-occluder pixel assertion.
+
+## First hosted run
+
+[Run 37249475873](https://github.com/f4ah6o/vlmkit/actions/runs/37249475873)
+tested PR head `bbd61e933f1a6f298caade8e77ff2c8a940fa485` as synthetic merge
+`fb8c035286729ac4f3c50faa62812fee31ed6c36`.
+
+- Python contract tests passed; actual GTK/AT-SPI window enumeration/selection
+  reached capture. Capture rejected the pixmap's color-mask metadata rather than
+  guessing a pixel format. This is not a passing native observation.
+- The transport job's Linux cases passed; five existing generic-judge cases failed
+  because this new focused lane omitted the MoonBit CLI. The lane now installs
+  the same pinned toolchain used locally before running those tests.
+- [Format job](https://github.com/f4ah6o/vlmkit/actions/runs/37249475830/job/111573962564)
+  independently confirmed the unchanged main provenance syntax/format failures.
+
+Subsequent evidence must identify the repaired exact head; the first run is kept
+as failure provenance, not relabelled as a successful fixture run.
