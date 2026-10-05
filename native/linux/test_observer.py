@@ -12,9 +12,33 @@ from unittest.mock import patch
 import zlib
 
 import observer as o
+from integration import verify_occlusion_setup
 
 
 class ObserverTests(unittest.TestCase):
+    def test_occlusion_fixture_rejects_absent_or_reversed_overlap(self):
+        bounds = o.rect(80, 80, 360, 260)
+        selected = dict(screenCaptureWindowId=10, frameGlobalPoints=bounds)
+        class FakeX:
+            root = 1
+            order = [10, 20]
+            foreign_rect = bounds
+            def pid(self, xid): return 100
+            def geometry(self, xid): return bounds
+            def windows(self, pid): return [dict(xid=20, pid=pid, rect=self.foreign_rect)]
+            def children(self, xid): return self.order
+        x = FakeX()
+        proof = verify_occlusion_setup(x, selected, 100, 200)
+        self.assertGreater(proof['foreignStackIndex'], proof['selectedStackIndex'])
+        for order in ([20, 10], [10]):
+            x.order = order
+            with self.assertRaises(AssertionError):
+                verify_occlusion_setup(x, selected, 100, 200)
+        x.order = [10, 20]
+        x.foreign_rect = o.rect(81, 80, 360, 260)
+        with self.assertRaises(AssertionError):
+            verify_occlusion_setup(x, selected, 100, 200)
+
     def test_association_never_uses_title(self):
         r = o.rect(-30, 45, 300, 200)
         a = dict(pid=10, rect=r, title='same')

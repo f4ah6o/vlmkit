@@ -12,6 +12,8 @@ import time
 import traceback
 import zlib
 
+from observer import X11, I
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -72,6 +74,34 @@ def read_rgb_png(path):
     return width, height, pixel
 
 
+def verify_occlusion_setup(x, selected, target_pid, foreign_pid):
+    """Read-only proof for the admitted bare Xvfb/no-WM fixture profile."""
+    target_xid = selected['screenCaptureWindowId']
+    expected = selected['frameGlobalPoints']
+    assert target_pid != foreign_pid, 'Occluder must belong to a different process'
+    assert x.pid(target_xid) == target_pid, 'Selected fixture ownership changed'
+    target_rect = x.geometry(target_xid)
+    # geometry() only admits IsViewable InputOutput, zero-border client windows.
+    assert target_rect == expected, ('Selected fixture is not viewable at expected geometry', target_rect)
+    foreign_windows = x.windows(foreign_pid)
+    assert len(foreign_windows) == 1, ('Expected one viewable foreign client', foreign_windows)
+    foreign_window = foreign_windows[0]
+    foreign_xid, foreign_rect = foreign_window['xid'], foreign_window['rect']
+    assert foreign_rect == target_rect, ('Foreign fixture must exactly cover selected client', foreign_rect, target_rect)
+    # XQueryTree children are bottom-to-top. This deliberately refuses WM
+    # reparenting rather than weakening the controlled occlusion condition.
+    root_children = x.children(x.root)
+    assert target_xid in root_children and foreign_xid in root_children, 'Fixture clients must both be direct root children (no-WM profile)'
+    target_index, foreign_index = root_children.index(target_xid), root_children.index(foreign_xid)
+    assert foreign_index > target_index, ('Foreign fixture is not stacked above selected client', target_index, foreign_index)
+    return dict(rootWindowId=x.root, selectedWindowId=target_xid, foreignWindowId=foreign_xid,
+                selectedPid=target_pid, foreignPid=foreign_pid,
+                selectedRect=target_rect, foreignRect=foreign_rect,
+                selectedViewable=True, foreignViewable=True, directRootSiblings=True,
+                stackingOrder='bottom-to-top', selectedStackIndex=target_index,
+                foreignStackIndex=foreign_index, rootChildCount=len(root_children))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--out', default='test-results/native/linux')
@@ -79,6 +109,7 @@ def main():
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     client, app, foreign = Client(), None, None
+    x = None
     report = dict(platform='linux', backend='x11', checks=[])
     try:
         hello = client.request('hello')
@@ -98,8 +129,20 @@ def main():
         selected = min(windows, key=lambda w: w['frameGlobalPoints']['left'])
         client.request('window.select', dict(sessionId=sid, selector=dict(by='window-id', windowId=selected['windowId'])))
         foreign = fixture('--foreign')  # Covers target with bright green pixels.
+        x = X11()
+        setup = verify_occlusion_setup(x, selected, app.pid, foreign.pid)
+        foreign_png = x.capture(setup['foreignWindowId'], foreign.pid, setup['foreignRect'], x.compositor())
+        (out / 'foreign.png').write_bytes(foreign_png)
+        _, _, foreign_pixel = read_rgb_png(out / 'foreign.png')
+        assert foreign_pixel(70, 50) == (0, 255, 0), 'Occluder fixture backing must actually contain green pixels'
+        report['occlusion'] = dict(foreignFrame='foreign.png', fixtureColorPoint=dict(x=70, y=50),
+                                   foreignFixtureRgb=list(foreign_pixel(70, 50)))
         params = dict(sessionId=sid, windowId=selected['windowId'], outputTreePath=str(out / 'a11y.json'), outputPngPath=str(out / 'frame.png'))
+        report['occlusion']['beforeCapture'] = verify_occlusion_setup(x, selected, app.pid, foreign.pid)
         result = client.request('snapshot.capture', params)
+        report['occlusion']['afterCapture'] = verify_occlusion_setup(x, selected, app.pid, foreign.pid)
+        assert report['occlusion']['beforeCapture'] == report['occlusion']['afterCapture'], 'Occlusion setup changed during selected capture'
+
         tree = json.loads((out / 'a11y.json').read_text())
         assert tree['format'] == 'vlmkit-a11y/1' and tree['platform'] == 'linux'
         assert result['frameKind'] == 'client-window' and result['identity']['pid'] == app.pid
@@ -114,7 +157,10 @@ def main():
         width, height, pixel = read_rgb_png(out / 'frame.png')
         r = color['rect']
         point = (int(r['left'] + r['width'] / 2), int(r['top'] + r['height'] / 2))
+        assert foreign_pixel(*point) == (0, 255, 0), ('Semantic test point must be covered by actual foreign green pixels', point)
         assert pixel(*point) == (255, 0, 0), ('Selected red client pixels must survive green foreign occlusion', pixel(*point))
+        report['occlusion'].update(semanticPoint=dict(x=point[0], y=point[1]),
+                                    selectedRgb=list(pixel(*point)), foreignRgb=list(foreign_pixel(*point)))
         report['checks'].extend(['duplicate-title same-PID windows', 'stable toolkit identifier', 'client-frame geometry', 'semantic-rect pixel alignment', 'foreign occluder excluded'])
         truncated = client.request('snapshot.capture', dict(params, maxNodes=1, outputTreePath=str(out / 'truncated.json'), outputPngPath=str(out / 'truncated.png')))
         assert truncated['counts']['nodes'] == 1 and truncated['counts']['truncated'] > 0
@@ -133,6 +179,8 @@ def main():
         (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         raise
     finally:
+        if x:
+            x.fn('XCloseDisplay', I)()
         for p in (foreign, app):
             if p and p.poll() is None:
                 p.terminate()

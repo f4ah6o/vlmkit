@@ -99,3 +99,17 @@ This admits the named fixture observation profile only. It does not establish
 physical input safety, compositor-independent Linux support, GTK/Qt application
 coverage, accessibility in GPUI/MZed, HiDPI/fractional coordinates, or Wayland.
 Whole-repository base-check failures still require their separate repair.
+
+## Occlusion setup hardening
+
+The earlier passing fixture created an overlapping foreign window, but did not
+explicitly inspect its stacking. The maintained integration test now requires
+both clients to be viewable direct-root siblings with identical geometry,
+different PIDs, and the foreign window above the selected window in XQueryTree's
+bottom-to-top order. It rechecks these facts immediately before and after target
+capture and records them in `report.occlusion`. It also retains `foreign.png`
+and verifies actual green foreign pixels at the exact semantic point where the
+selected window must be red. A pure regression rejects absent, reversed and
+nonoverlapping setups. Final acceptance should cite the strengthened run linked
+from PR #3; earlier runs prove capture/alignment but do not independently prove
+that adversarial stacking precondition.
