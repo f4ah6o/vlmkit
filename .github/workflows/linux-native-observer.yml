@@ -1,0 +1,75 @@
+name: Linux native observer
+
+on:
+  pull_request:
+    paths:
+      - 'native/linux/**'
+      - 'packages/vlmkit-markup/src/a11y-tree/**'
+      - 'packages/vlmkit-markup/src/gates/a11y-tree.gate.ts'
+      - '.github/workflows/linux-native-observer.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated fixture dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth dbus-x11 python3-gi python3-gi-cairo gir1.2-gtk-3.0 at-spi2-core libatk-adaptor libxcomposite1 libx11-6 xcompmgr
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build artifact consumers
+        run: |
+          pnpm exec vp pack --filter @mizchi/vlmkit-judge
+          pnpm exec vp pack --filter @mizchi/vlmkit-core
+      - name: Pure observer contract tests
+        run: python3 -m unittest discover -s native/linux -p 'test_*.py' -v
+      - name: X11 AT-SPI selected-window fixture
+        run: |
+          mkdir -p test-results/native/linux
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
+            native/linux/with-compositor.sh /usr/bin/python3 native/linux/integration.py --out test-results/native/linux
+      - name: Live TypeScript scan and generic judge
+        run: |
+          VLMKIT_LINUX_LIVE=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
+            native/linux/with-compositor.sh pnpm exec vp test run packages/vlmkit-markup/src/a11y-tree/linux-agent.test.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-x11-observer-evidence
+          path: test-results/native/linux
+          if-no-files-found: warn
+          retention-days: 14
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build artifact consumers
+        run: |
+          pnpm exec vp pack --filter @mizchi/vlmkit-judge
+          pnpm exec vp pack --filter @mizchi/vlmkit-core
+      - name: Linux admission and existing macOS transport regression
+        run: pnpm exec vp test run packages/vlmkit-markup/src/a11y-tree/linux-agent.test.ts packages/vlmkit-markup/src/a11y-tree/native-agent.test.ts

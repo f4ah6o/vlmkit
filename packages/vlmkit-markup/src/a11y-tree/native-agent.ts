@@ -1,4 +1,4 @@
-/** macOS observer transport. No native actions are exposed by protocol v1. */
+/** Native observer transport. Capture-only Linux extensions preserve the macOS protocol. */
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { readFile } from "node:fs/promises";
@@ -16,6 +16,13 @@ export type MacTarget =
   | { by: "pid"; pid: number }
   | { by: "bundle-id"; bundleId: string; launchIfNeeded?: boolean }
   | { by: "app-path"; appPath: string; launchIfNeeded?: boolean };
+export function linuxTarget(source: string, launch = false): { by: "pid"; pid: number } {
+  if (launch) throw new UsageError("Linux observer is attach-only; --launch is not supported.");
+  if (!/^linux:pid=[1-9]\d*$/.test(source)) throw new UsageError("Expected linux:pid=N (attach-only X11 observer).");
+  const pid = Number(source.slice("linux:pid=".length));
+  if (!Number.isSafeInteger(pid) || pid > 2147483647) throw new UsageError("linux:pid= needs a positive process ID.");
+  return { by: "pid", pid };
+}
 export type WindowSelector =
   | { by: "window-id"; windowId: string }
   | { by: "main" | "focused" }
@@ -28,6 +35,10 @@ export interface NativeCaptureResult {
   scale: number;
   counts: { nodes: number; truncated: number; attributeErrors: number };
   transform: { globalWindowOriginPoints: { x: number; y: number }; logicalToPixelScale: number };
+  /** Linux v0 explicitly captures the X11 client window, not WM decorations. */
+  backend?: "x11";
+  frameKind?: "client-window";
+  identity?: { pid: number; windowId: string; [key: string]: unknown };
   diagnostics: Array<{ code: string; [key: string]: unknown }>;
   contentPolicy: ContentPolicyMetadata;
 }
@@ -152,33 +163,61 @@ export async function captureNativeA11y(options: {
   /** Local policy label attached to the produced semantic tree + screenshot. */
   provenance?: ContentProvenance;
 }): Promise<{ tree: A11yTree; capture: NativeCaptureResult }> {
-  if (process.platform !== "darwin") throw new UsageError("Native macOS scan requires a macOS host.");
+  const linux = options.source.startsWith("linux:");
+  if (process.platform !== (linux ? "linux" : "darwin"))
+    throw new UsageError(
+      linux ? "Native Linux scan requires a Linux host." : "Native macOS scan requires a macOS host.",
+    );
   const executable = options.agent ?? process.env.VLMKIT_NATIVE_AGENT;
   if (!executable)
     throw new UsageError(
-      "Set --native-agent (or VLMKIT_NATIVE_AGENT) to VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent. Build with native/macos/script/build_and_run.sh --build-only.",
+      linux
+        ? "Set --native-agent (or VLMKIT_NATIVE_AGENT) to native/linux/observer.py. See native/linux/README.md for runtime dependencies."
+        : "Set --native-agent (or VLMKIT_NATIVE_AGENT) to VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent. Build with native/macos/script/build_and_run.sh --build-only.",
     );
-  const target = macTarget(options.source, options.launch);
+  const target = linux ? linuxTarget(options.source, options.launch) : macTarget(options.source, options.launch);
   const selector = macWindow(options.window);
   const client = new NativeAgentClient(executable, options.timeout);
   let sessionId: string | undefined;
   try {
-    const hello = await client.request<{ protocol: number }>("hello");
+    const hello = await client.request<{
+      protocol: number;
+      platform?: string;
+      backend?: string;
+      capabilities?: {
+        accessibility?: boolean;
+        screenCapture?: boolean;
+        physicalPointer?: boolean;
+        physicalKeyboard?: boolean;
+      };
+    }>("hello");
     if (hello.protocol !== 1)
       throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "agent does not support protocol 1");
+    if (
+      linux &&
+      (hello.platform !== "linux" ||
+        hello.backend !== "x11" ||
+        hello.capabilities?.physicalPointer !== false ||
+        hello.capabilities?.physicalKeyboard !== false)
+    )
+      throw new NativeAgentError("NATIVE_PROTOCOL_MISMATCH", "Expected Linux X11 observer-only capabilities.");
     const doctor = await client.request<{
-      accessibility: { trusted: boolean };
-      screenCapture: { authorized: boolean };
+      accessibility: { trusted?: boolean; available?: boolean };
+      screenCapture: { authorized?: boolean; available?: boolean };
     }>("doctor", { prompt: false });
-    if (!doctor.accessibility.trusted)
+    if (!(linux ? doctor.accessibility.available : doctor.accessibility.trusted))
       throw new NativeAgentError(
         "NATIVE_PERMISSION_ACCESSIBILITY",
-        "Allow the observer in System Settings > Privacy & Security > Accessibility.",
+        linux
+          ? "Linux AT-SPI is unavailable. Run the observer in the target app’s accessible desktop session; see native/linux/README.md."
+          : "Allow the observer in System Settings > Privacy & Security > Accessibility.",
       );
-    if (!doctor.screenCapture.authorized)
+    if (!(linux ? doctor.screenCapture.available : doctor.screenCapture.authorized))
       throw new NativeAgentError(
         "NATIVE_PERMISSION_SCREEN_CAPTURE",
-        "Allow the observer in System Settings > Privacy & Security > Screen Recording.",
+        linux
+          ? "Linux X11 selected-window capture is unavailable; Wayland is not admitted by this observer."
+          : "Allow the observer in System Settings > Privacy & Security > Screen Recording.",
       );
     ({ sessionId } = await client.request<{ sessionId: string }>("target.open", { target }));
     const deadline = Date.now() + (options.timeout ?? 30000);
@@ -213,7 +252,7 @@ export async function captureNativeA11y(options: {
     const tree = parseA11yTree(await readFile(capture.treePath, "utf8"));
     const pixels = await decodePng(capture.pngPath);
     if (
-      tree.platform !== "macos" ||
+      tree.platform !== (linux ? "linux" : "macos") ||
       tree.scale !== capture.scale ||
       tree.viewport.width !== capture.viewport.width ||
       tree.viewport.height !== capture.viewport.height ||
@@ -225,6 +264,18 @@ export async function captureNativeA11y(options: {
     ) {
       throw new NativeAgentError("NATIVE_COORDINATE_MISMATCH", "capture metadata and tree disagree");
     }
+    if (
+      linux &&
+      (capture.backend !== "x11" ||
+        capture.frameKind !== "client-window" ||
+        target.by !== "pid" ||
+        capture.identity?.pid !== target.pid ||
+        capture.identity?.windowId !== window.windowId)
+    )
+      throw new NativeAgentError(
+        "NATIVE_TARGET_MISMATCH",
+        "Linux capture must retain the selected process/window identity.",
+      );
     return { tree, capture };
   } finally {
     if (sessionId) await client.request("session.close", { sessionId }).catch(() => {});

@@ -33,12 +33,16 @@ For the first production-ready native path:
 - no application-internal GPUI test API;
 - no browser DOM compatibility layer for native UI;
 - no iOS/Android support;
-- no Windows/Linux implementation in the first milestone;
+- the original macOS milestone remains bounded; Linux now has its own first-class
+  [observer and admission packet](20261005-linux-native-observer.md);
 - no required Appium dependency;
 - no remote-control daemon listening on a network socket;
 - no NPM publication requirement for new fork-only packages.
 
-Windows UI Automation and Linux AT-SPI should remain possible future drivers, but must not constrain the macOS v1 design beyond the common protocol.
+Linux AT-SPI is a first-class implementation target with separately admitted X11 and
+Wayland profiles. Windows UI Automation remains deferred until higher-priority
+macOS/Linux work is exhausted and the user supplies a Windows work environment.
+The common protocol must preserve honest platform capability boundaries.
 
 ## Current repository constraints
 

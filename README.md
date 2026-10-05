@@ -11,6 +11,12 @@ key-free unless marked `[key]`.
 
 Requires Node 24+.
 
+Native desktop observation: [macOS observer](native/macos/README.md) and
+[Linux X11 observer](native/linux/README.md). Linux is a first-class support target;
+see the [profile admission matrix](issues/open/20261005-linux-native-observer.md)
+for implemented versus verified capabilities. Native input and Wayland remain
+separately gated.
+
 ## Quickstart — visual analysis with zero context
 
 ```bash
