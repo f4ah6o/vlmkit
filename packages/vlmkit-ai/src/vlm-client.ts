@@ -48,7 +48,12 @@ export interface VlmClient {
   model: VlmModel;
   analyzeImage(imageBase64: string, prompt: string, options?: VlmAnalyzeOptions): Promise<VlmResponse>;
   analyzeImageFile(imagePath: string, prompt: string, options?: VlmAnalyzeOptions): Promise<VlmResponse>;
-  analyzeDiff(baselineBase64: string, currentBase64: string, prompt: string, options?: VlmDiffOptions): Promise<VlmResponse>;
+  analyzeDiff(
+    baselineBase64: string,
+    currentBase64: string,
+    prompt: string,
+    options?: VlmDiffOptions,
+  ): Promise<VlmResponse>;
 }
 
 function guardVlmClient(client: VlmClient): VlmClient {
@@ -351,7 +356,10 @@ async function createClaudeClient(model: VlmModel, apiKey: string): Promise<VlmC
     async analyzeImage(imageBase64, prompt, options) {
       return callClaude(
         [
-          { type: "image", source: { type: "base64", media_type: options?.mediaType ?? "image/png", data: imageBase64 } },
+          {
+            type: "image",
+            source: { type: "base64", media_type: options?.mediaType ?? "image/png", data: imageBase64 },
+          },
           { type: "text", text: prompt },
         ],
         options?.maxTokens ?? 1024,

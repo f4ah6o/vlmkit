@@ -199,10 +199,15 @@ Be specific. One change per line. Format: "- [element] property: old → new (se
       const label = `${model.id} +zoom`;
       process.stdout.write(`  ${label.padEnd(50)} `);
       try {
-        const resp = await analyzeWithZoom(model, [{ png: Buffer.from(imageBase64, "base64"), provenance: "app_owned" }], prompt, {
-          maxTokens: 512,
-          maxZooms: getIntArg("max-zooms", 6, { min: 0 }),
-        });
+        const resp = await analyzeWithZoom(
+          model,
+          [{ png: Buffer.from(imageBase64, "base64"), provenance: "app_owned" }],
+          prompt,
+          {
+            maxTokens: 512,
+            maxZooms: getIntArg("max-zooms", 6, { min: 0 }),
+          },
+        );
         const costStr = resp.costUsd === 0 ? `${GREEN}FREE${RESET}` : `$${resp.costUsd.toFixed(6)}`;
         console.log(
           `${GREEN}${String(resp.latencyMs).padStart(5)}ms${RESET} ${costStr.padStart(16)} ${DIM}${resp.totalTokens}tok ${resp.zoom.zooms.length} zoom(s) (${resp.zoom.protocol})${RESET}`,

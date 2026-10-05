@@ -69,10 +69,7 @@ describe("external AI provenance gate", () => {
       }
     }
     const allowed = (0 * after.width + 3) * 4;
-    assert.deepEqual(
-      [...after.data.subarray(allowed, allowed + 4)],
-      [...before.data.subarray(allowed, allowed + 4)],
-    );
+    assert.deepEqual([...after.data.subarray(allowed, allowed + 4)], [...before.data.subarray(allowed, allowed + 4)]);
     assert.doesNotThrow(() => assertExternalAiImageAllowed(sanitized));
   });
 
@@ -95,12 +92,7 @@ describe("external AI provenance gate", () => {
       /must intersect the image/,
     );
     assert.throws(
-      () =>
-        sanitizePngForExternalAi(
-          input,
-          [{ left: 0, top: 0, width: 1, height: 1 }],
-          { fill: [255, 77, 33, 255] },
-        ),
+      () => sanitizePngForExternalAi(input, [{ left: 0, top: 0, width: 1, height: 1 }], { fill: [255, 77, 33, 255] }),
       /changed no pixels/,
     );
     assert.deepEqual(Buffer.from(input.bytes as Uint8Array), poison, "the poison input itself was never rewritten");

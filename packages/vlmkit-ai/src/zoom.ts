@@ -10,7 +10,13 @@
 import { VrtConfigError } from "./errors.ts";
 import { isClaudeDirectModel, isGeminiDirectModel, type VlmModel, type VlmResponse } from "./vlm-client.ts";
 import { anthropicDriver, geminiDriver, openAiCompatibleDriver } from "./zoom-drivers.ts";
-import { runZoomLoop, type VisionChatDriver, type ZoomLoopOptions, type ZoomLoopResult } from "./zoom-loop.ts";
+import {
+  runZoomLoop,
+  type VisionChatDriver,
+  type ZoomImageInput,
+  type ZoomLoopOptions,
+  type ZoomLoopResult,
+} from "./zoom-loop.ts";
 
 export * from "./zoom-geometry.ts";
 export { prepareZoomSource, zoomInto, type ZoomSource, type ZoomOutcome } from "./zoom-image.ts";
@@ -64,7 +70,7 @@ export interface ZoomAnalysis extends VlmResponse {
  */
 export async function analyzeWithZoom(
   model: VlmModel,
-  images: readonly { png: Buffer; label?: string }[],
+  images: readonly ZoomImageInput[],
   prompt: string,
   options: ZoomLoopOptions & ZoomDriverOptions = {},
 ): Promise<ZoomAnalysis> {
