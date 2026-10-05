@@ -23,6 +23,7 @@ import type {
   StorageStatus,
   VisualDiffDisplaysResponse,
 } from "./api-types.ts";
+import { CONTENT_POLICY_HEADER, encodeContentPolicy } from "./content-policy.ts";
 import { buildOpenApiSpec } from "./openapi.ts";
 import { registerCompareRoute } from "./routes/compare.ts";
 import { registerCompareRenderersRoute } from "./routes/compare-renderers.ts";
@@ -182,7 +183,10 @@ export function createApiApp(options: CreateApiAppOptions = {}) {
     }
     try {
       const result = await options.cloudflareQuickActions.screenshot(body);
-      const headers = new Headers({ "content-type": result.contentType });
+      const headers = new Headers({
+        "content-type": result.contentType,
+        [CONTENT_POLICY_HEADER]: encodeContentPolicy(result.contentPolicy),
+      });
       if (result.browserMsUsed !== undefined) {
         headers.set("x-browser-ms-used", String(result.browserMsUsed));
       }

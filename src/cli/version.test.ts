@@ -75,16 +75,44 @@ describe("the declared version", () => {
     );
   });
 
-  it("has a changelog section, and no `## Unreleased` above it", () => {
-    // The release step is "rename Unreleased", and forgetting it leaves a version with
-    // no notes while the notes sit under a heading that claims to be unreleased.
-    const firstHeading = read("CHANGELOG.md").match(/^## .+$/m)?.[0] ?? "(none)";
-    assert.match(
-      firstHeading,
-      new RegExp(`^## ${rootVersion.replace(/\./g, "\\.")} — \\d{4}-\\d{2}-\\d{2}$`),
-      `the newest changelog heading is ${JSON.stringify(firstHeading)}; it should be ` +
-        `\`## ${rootVersion} — YYYY-MM-DD\`. Rename \`## Unreleased\` when stamping a release, ` +
-        `or add a new \`## Unreleased\` above it when starting the next one.`,
-    );
+  it("has a matching latest release, optionally preceded by one Unreleased section", () => {
+    assertChangelogVersion(read("CHANGELOG.md"), rootVersion);
+  });
+
+  it("accepts release notes with or without a leading Unreleased section", () => {
+    for (const prefix of ["", "## Unreleased\n\n- Work in progress.\n\n"]) {
+      assertChangelogVersion(`${prefix}## 1.2.3 — 2026-10-02\n\n- Release notes.`, "1.2.3");
+    }
+  });
+
+  it("still rejects missing, mismatched, or malformed latest releases and misplaced Unreleased sections", () => {
+    for (const changelog of [
+      "",
+      "## Unreleased\n\n- Work in progress.",
+      "## 1.2.2 — 2026-10-02\n## 1.2.3 — 2026-10-01",
+      "## Unreleased\n## 1.2.2 — 2026-10-02",
+      "## Unreleased\n## 1.2.3 — not-a-date",
+      "## Unreleased\n## Unreleased\n## 1.2.3 — 2026-10-02",
+      "## 1.2.3 — 2026-10-02\n## Unreleased",
+    ]) {
+      assert.throws(() => assertChangelogVersion(changelog, "1.2.3"), assert.AssertionError);
+    }
   });
 });
+
+function assertChangelogVersion(changelog: string, version: string): void {
+  const headings: string[] = changelog.match(/^## .+$/gm) ?? [];
+  const unreleased = headings.indexOf("## Unreleased");
+  if (unreleased !== -1) {
+    assert.equal(unreleased, 0, "Unreleased must precede the latest release");
+    assert.equal(headings.lastIndexOf("## Unreleased"), 0, "Only one Unreleased section is allowed");
+  }
+  // Development notes do not turn into release notes until an actual version is stamped.
+  // Still require the first versioned section, not an older match further down the file.
+  const latestRelease = headings[unreleased === 0 ? 1 : 0] ?? "(none)";
+  assert.match(
+    latestRelease,
+    new RegExp(`^## ${version.replace(/\./g, "\\.")} — \\d{4}-\\d{2}-\\d{2}$`),
+    `the latest released changelog heading is ${JSON.stringify(latestRelease)}; expected ## ${version} — YYYY-MM-DD`,
+  );
+}

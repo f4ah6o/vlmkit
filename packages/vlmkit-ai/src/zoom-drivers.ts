@@ -30,7 +30,8 @@ type Fetch = typeof fetch;
 
 function assertZoomTranscriptAllowed(transcript: readonly ZoomTurn[]): void {
   for (const turn of transcript) {
-    const parts = turn.role === "user" ? turn.parts : turn.role === "tool" ? turn.results.flatMap((result) => result.parts) : [];
+    const parts =
+      turn.role === "user" ? turn.parts : turn.role === "tool" ? turn.results.flatMap((result) => result.parts) : [];
     for (const part of parts) {
       if (part.type === "image") assertExternalAiAllowed(part, "image", "zoom transcript");
       else if (part.provenance !== undefined) assertExternalAiAllowed(part, "text", "zoom transcript");

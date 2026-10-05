@@ -188,9 +188,7 @@ describe("OpenRouter route", () => {
         () =>
           client.generate({
             prompt: "p",
-            inputReferences: [
-              { url: "data:image/png;base64,POISON_DO_NOT_EGRESS", provenance: "restricted_content" },
-            ],
+            inputReferences: [{ url: "data:image/png;base64,POISON_DO_NOT_EGRESS", provenance: "restricted_content" }],
           }),
         /External AI egress blocked/,
       );

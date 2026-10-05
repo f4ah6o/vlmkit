@@ -218,7 +218,12 @@ export function buildOpenRouterBody(model: ImageGenModel, req: ImageGenRequest):
     ...(req.quality ? { quality: req.quality } : {}),
     ...(req.background ? { background: req.background } : {}),
     ...(req.inputReferences?.length
-      ? { input_references: req.inputReferences.map((reference) => ({ type: "image_url" as const, image_url: { url: typeof reference === "string" ? reference : reference.url } })) }
+      ? {
+          input_references: req.inputReferences.map((reference) => ({
+            type: "image_url" as const,
+            image_url: { url: typeof reference === "string" ? reference : reference.url },
+          })),
+        }
       : {}),
   };
 }

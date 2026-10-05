@@ -208,7 +208,12 @@ describe("stage 1 — VLM reply to a structured report", () => {
     // which one was sent is worth pinning.
     serve([recorded("stage1-openrouter")]);
     const pipeline = createReasoningPipeline()!;
-    await pipeline.analyze({ selectorCropBase64: PIXEL, heatmapBase64: PIXEL, currentBase64: PIXEL, contentProvenance: "app_owned" });
+    await pipeline.analyze({
+      selectorCropBase64: PIXEL,
+      heatmapBase64: PIXEL,
+      currentBase64: PIXEL,
+      contentProvenance: "app_owned",
+    });
     const sent = JSON.stringify(calls.filter((c) => !c.url.includes("/models"))[0]!.body);
     assert.match(sent, /data:image\/png;base64,/);
   });
