@@ -1,6 +1,6 @@
 # Initial Linux X11 observer — 2026-10-05
 
-Status: bounded hosted X11 fixture acceptance PASS; implementation remains in draft review.
+Status: bounded hosted X11 fixture acceptance PASS; broader support remains gated.
 Broader desktop/toolkit, real GPUI/MZed and Wayland acceptance remain pending.
 
 This slice introduces an external, read-only PID-attached composited X11/AT-SPI observer.
@@ -113,3 +113,18 @@ selected window must be red. A pure regression rejects absent, reversed and
 nonoverlapping setups. Final acceptance should cite the strengthened run linked
 from PR #3; earlier runs prove capture/alignment but do not independently prove
 that adversarial stacking precondition.
+
+
+## Repaired-main integration
+
+After the separately reviewed base fixes #4/#5, main
+`0f9eed6eca6f24afbb8318f556da3fceadca253a` passed all five main-push workflows,
+including [full tests and typecheck](https://github.com/f4ah6o/vlmkit/actions/runs/37252449384).
+The Linux branch integrates that main non-destructively, preserving the previously
+accepted Linux source and fixture oracle. Earlier base syntax/format failures above
+are historical diagnostics, not current merge exemptions.
+
+The integrated head must pass the complete repository workflows (full tests,
+typecheck, format, packaging and VRT), the native observer/transport workflow and
+independent review before merge. PR #3 records exact integrated-head and post-merge
+main run links. A previous native-only pass does not substitute for these gates.

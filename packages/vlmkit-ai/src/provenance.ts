@@ -99,7 +99,7 @@ export function assertExternalAiImageAllowed(
 export function assertExternalAiMessageAllowed(
   content:
     | string
-    | readonly Array<
+    | ReadonlyArray<
         | { type: "text"; text: string; provenance?: ContentProvenance }
         | { type: "image"; provenance?: ContentProvenance }
       >,

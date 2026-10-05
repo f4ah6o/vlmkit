@@ -1,6 +1,6 @@
 # Linux native observer and support admission
 
-Status: implementation in review; bounded GTK/Xvfb/xcompmgr fixture acceptance passed.
+Status: bounded X11 observer implemented; GTK/Xvfb/xcompmgr fixture acceptance passed.
 Broader Linux profiles remain subject to their own admission evidence.
 
 Linux native is a first-class target alongside macOS. Eventual application/tool support
@@ -34,7 +34,10 @@ Record implementation and actual acceptance separately for each profile:
 
 Before broader X11 admission: GTK/Qt and real gpui.mbt/MZed semantics, multi-window,
 resize/move, absent/partial AT-SPI, duplicate identities, target exit, CSD/SSD,
-scaling and retained pixel/tree alignment evidence. Missing GPUI accessibility is
+scaling and retained pixel/tree alignment evidence. Add a distinct visited-node/
+reference budget before broad desktop admission: the current emitted-node cap and
+15-second AT-SPI deadline do not bound every eagerly acquired child reference.
+Missing GPUI accessibility is
 a framework gap, not permission to synthesize a passing tree.
 
 Wayland needs an explicit portal-backed observer packet: advertised WINDOW source,

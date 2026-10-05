@@ -436,7 +436,10 @@ describe("Anthropic requests", () => {
     // as `undefined is not a function` three frames later.
     stubFetch(() => ({ status: 401, text: '{"error":{"message":"invalid x-api-key"}}' }));
     const client = await createVlmClient(claude, { apiKey: "bad" });
-    await assert.rejects(() => client!.analyzeImage("IMG", "p", { provenance: "app_owned" }), /Anthropic API error: 401.*invalid x-api-key/s);
+    await assert.rejects(
+      () => client!.analyzeImage("IMG", "p", { provenance: "app_owned" }),
+      /Anthropic API error: 401.*invalid x-api-key/s,
+    );
   });
 });
 

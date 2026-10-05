@@ -260,7 +260,11 @@ describe("runSingleLook: the control arm", () => {
   it("shows the same images at the same size, offers no tool and never mentions zooming", async () => {
     const image = png(canvas(3000, 1000, 1501));
     const control = scripted(true, [{ text: " answer ", calls: [], usage: { promptTokens: 7, completionTokens: 3 } }]);
-    const result = await runSingleLook(control, [{ png: image, provenance: "app_owned", label: "Current" }], "What is there?");
+    const result = await runSingleLook(
+      control,
+      [{ png: image, provenance: "app_owned", label: "Current" }],
+      "What is there?",
+    );
     assert.equal(result.answer, "answer");
     assert.deepEqual(result.usage, { promptTokens: 7, completionTokens: 3 });
     assert.deepEqual(control.offered, [false]);
@@ -412,7 +416,11 @@ describe("drivers: the same loop on three wire formats", () => {
       },
       { choices: [{ message: { content: "fine" } }] },
     ]);
-    const result = await runZoomLoop(openAiCompatibleDriver({ model: "m", fetch: f }), [{ png: image, provenance: "app_owned" }], "?");
+    const result = await runZoomLoop(
+      openAiCompatibleDriver({ model: "m", fetch: f }),
+      [{ png: image, provenance: "app_owned" }],
+      "?",
+    );
     assert.equal(result.rejected[0]!.reason, "arguments are not valid JSON");
     assert.equal(requests[1]!.body.messages[2].tool_call_id, "bad");
   });

@@ -34,9 +34,13 @@ typelib is required.
   observer, **not** a security boundary against malicious X11 clients. Explicit
   foreign-PID embedded child windows are refused. No cross-client X11 security
   guarantees are asserted.
-- Traversal is cycle-safe, bounded to 10,000 nodes / depth 128 maximum, 15 seconds
+- Traversal is cycle-safe, bounded to 10,000 emitted nodes / depth 128 maximum, 15 seconds
   per AT-SPI request sequence and 1 second per remote AT-SPI call. Partial trees
   report truncation/errors. Missing geometry is diagnostic, never invented.
+- The emitted-node cap is not a total visited/reference cap: geometry-less or
+  very wide accessibility trees may acquire additional child references before
+  the deadline. A separate visited/reference budget is required before broader
+  desktop admission; the current evidence covers the bounded fixture only.
 - Names, toolkit-exposed accessible IDs, roles, states and native action names
   are observed. Action names have an `atspi:` prefix; controls do not receive
   synthetic `tap` actions. Values and text contents are not collected in this
