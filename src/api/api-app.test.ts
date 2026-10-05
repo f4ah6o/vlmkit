@@ -284,6 +284,7 @@ describe("createApiApp", () => {
             bytes: new Uint8Array([1, 2, 3]).buffer,
             contentType: "image/png",
             browserMsUsed: 25,
+            contentPolicy: { provenance: "restricted_content", source: "capture" },
           };
         },
         async startCrawl() {

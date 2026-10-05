@@ -9,6 +9,7 @@
  *   const client = new VrtClient("http://localhost:3456");
  *   const result = await client.compare({ baseline: { html: "..." }, current: { html: "..." } });
  */
+import { CONTENT_POLICY_HEADER, decodeContentPolicy } from "./content-policy.ts";
 import type {
   ApprovalListQuery,
   ApprovalListResponse,
@@ -139,13 +140,16 @@ export class VrtClient {
     return this.post("/api/approvals", request);
   }
 
+  /** Requires a policy-aware server; absent or invalid response metadata fails closed. */
   async cloudflareScreenshot(request: CloudflareScreenshotRequest): Promise<CloudflareScreenshotResult> {
     const res = await this.postRaw("/api/cloudflare/screenshot", request);
     const browserMsUsed = res.headers.get("x-browser-ms-used");
+    const contentPolicy = decodeContentPolicy(res.headers.get(CONTENT_POLICY_HEADER));
     return {
       bytes: await res.arrayBuffer(),
       contentType: res.headers.get("content-type") ?? "image/png",
       browserMsUsed: browserMsUsed ? Number(browserMsUsed) : undefined,
+      contentPolicy,
     };
   }
 
