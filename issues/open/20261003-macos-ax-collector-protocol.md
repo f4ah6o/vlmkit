@@ -4,6 +4,10 @@ Status: design / open
 Date: 2026-10-03  
 Parent: `issues/open/20261003-native-ui-boundary-audit.md`
 
+OS follow-up: [Apple Silicon macOS native-driver qualification](20261007-apple-silicon-macos-native-driver.md).
+The existing observer design/evidence remains here; new macOS execution
+qualification is arm64 only, with no Intel work introduced.
+
 ## Purpose
 
 Specify the first implementation packet for macOS native observation.
