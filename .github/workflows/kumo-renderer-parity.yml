@@ -50,9 +50,17 @@ jobs:
           setup-core: true
           core-version: 0.10.14+7d59c7ec9
 
+      - name: Allow the pinned esbuild install script
+        run: pnpm config set --location=project --json allowBuilds '{"esbuild":true}'
+
       - name: Isolate the nested Yami-kumo workspace
         run: |
-          printf 'packages:\n  - "."\n' > yami-kumo/pnpm-workspace.yaml
+          cat > yami-kumo/pnpm-workspace.yaml <<'YAML'
+          packages:
+            - "."
+          allowBuilds:
+            esbuild: true
+          YAML
 
       - name: Install vlmkit dependencies
         run: pnpm install --frozen-lockfile
