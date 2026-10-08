@@ -80,6 +80,36 @@ import { runDesignTokens } from "@mizchi/vlmkit-markup/style/design-tokens.ts";
 import { runComponentFromImage } from "@mizchi/vlmkit-markup/component/component-from-image.ts";
 ```
 
+### Cross-renderer parity
+
+`vlmkit check renderer-parity --manifest <cases.json> --gallery <url>` compares
+the gallery's actual reference renderer with its generated candidate across
+declared viewports and interaction steps. The reusable runner is exported from
+`component/renderer-parity.ts`; it checks exact RGBA PNG pixels, computed styles,
+relative layout, DOM/ARIA semantics, and action results, and writes the source
+captures plus a JSON report. Missing or empty captures fail closed.
+The gallery must publish its installed Kumo version; the runner also rejects
+browser/resource failures, duplicate DOM IDs, and unresolved ID references.
+An interaction may list a non-empty `viewports` array containing only declared
+viewport IDs; each applicable action is counted in expected coverage. The gate
+compares focusin/out, keydown/up, click, input, and change events for every
+action across the document, so a Tab action still records a keyup after focus
+moves outside the mounted root; `hover` also compares pointer over/out events.
+Pointer transitions caused by unrelated actions are excluded, while hovered
+DOM state and pixels remain compared.
+Use `expect.clickCount` to assert activation counts, including zero for disabled
+controls. Hover state is also compared in the DOM and pixel snapshots. The
+runner waits for finite CSS transitions before measuring state. `--timeout`
+also bounds each navigation, gallery-readiness, mount, interaction, settling,
+and capture operation from the Node host; a stalled operation closes both
+capture pages, aborts the remaining matrix, and leaves explicit missing-coverage
+failures in the report.
+For stable PNGs, the screenshot page keeps the blinking caret transparent from
+before mount. A same-viewport, unmodified page replays each source and action;
+its original computed `caret-color` is included in style comparisons, and the
+runner requires both pages' DOM/ARIA, geometry, other computed styles, and
+action traces to agree before accepting the capture.
+
 ## What's included (library API)
 
 | Domain | Module | Purpose |

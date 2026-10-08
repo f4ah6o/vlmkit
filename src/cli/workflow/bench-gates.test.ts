@@ -96,7 +96,7 @@ describe("which gates the bench can run", () => {
     assert.equal(isBenchable(stub([{ name: "url", kind: "string", description: "Crater URL" }])), false);
   });
 
-  it("selects 24 of the 34 built-ins, and every one of them takes a page", async () => {
+  it("selects 24 of the 35 built-ins, and every one of them takes a page", async () => {
     // The count is a canary: a new gate that takes a page should join the bench
     // by existing, and one that does not must not be dragged in.
     resetGateRegistryCache();
@@ -123,6 +123,7 @@ describe("which gates the bench can run", () => {
       "check.drift.pages",
       "check.equivalence",
       "check.layout",
+      "check.renderer-parity",
       "check.story",
       "verify.flow",
       "verify.markup",

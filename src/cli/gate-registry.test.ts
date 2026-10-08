@@ -34,7 +34,7 @@ describe("composed built-in registry", () => {
     // createGateRegistry throws on a conflict, so reaching this line is the
     // assertion; the count guards against a plugin silently dropping out.
     const r = await registry();
-    assert.equal(r.list().length, 34);
+    assert.equal(r.list().length, 35);
   });
 
   it("keeps each gate id in step with its command path", async () => {
@@ -243,7 +243,8 @@ describe("composed built-in registry", () => {
     //       stops is measured as one instead of being `uncontrolled-motion`.
     const total = (await registry()).list().reduce((n, { gate }) => n + gate.rules.length, 0);
     // 210 → 211: native scan reports bounded/truncated or errored AX traversal.
-    assert.equal(total, 211);
+    // 211 → 215: renderer parity has coverage, capture, interaction and drift rules.
+    assert.equal(total, 215);
   });
 
   it("tracks which gates render their own rule settings, and which still cannot", async () => {
@@ -289,6 +290,7 @@ describe("composed built-in registry", () => {
       "check.layout",
       "check.motion",
       "check.perf",
+      "check.renderer-parity",
       "check.responsive",
       "check.scroll",
       "check.story",
