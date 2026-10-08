@@ -80,6 +80,17 @@ import { runDesignTokens } from "@mizchi/vlmkit-markup/style/design-tokens.ts";
 import { runComponentFromImage } from "@mizchi/vlmkit-markup/component/component-from-image.ts";
 ```
 
+### Cross-renderer parity
+
+`vlmkit check renderer-parity --manifest <cases.json> --gallery <url>` compares
+the gallery's actual reference renderer with its generated candidate across
+declared viewports and interaction steps. The reusable runner is exported from
+`component/renderer-parity.ts`; it checks exact PNG pixels, computed styles,
+relative layout, DOM/ARIA semantics, and action results, and writes the source
+captures plus a JSON report. Missing or empty captures fail closed.
+The gallery must publish its installed Kumo version; the runner also rejects
+browser/resource failures, duplicate DOM IDs, and unresolved ID references.
+
 ## What's included (library API)
 
 | Domain | Module | Purpose |

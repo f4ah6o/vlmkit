@@ -5,6 +5,7 @@ Dates are YYYY-MM-DD.
 
 ## Unreleased
 
+- Add `check renderer-parity` for deterministic reference-versus-generated component verification across manifest-declared viewports and focus, hover, click, edit, and keyboard states. It compares exact pixels and dimensions, computed styles, layout, DOM/ARIA semantics, and action results; Kumo version, browser-resource failures, and incomplete captures are checked fail-closed.
 - Add native macOS `scan a11y macos:<bundle-id|pid=N|/path/App.app>` with a local
   Swift AX/ScreenCaptureKit observer (macOS 14+), passive permission diagnostics,
   explicit launch/window selection, native-resolution PNGs, and incomplete-tree

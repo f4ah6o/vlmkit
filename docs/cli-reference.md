@@ -683,7 +683,7 @@ no-op, and the JSON is always
 ```
 
 so a client gates on `verdict` / `counts` without knowing which gate ran. All
-34 gates are registry-driven; `vlmkit rules` lists them. Commands that produce
+35 gates are registry-driven; `vlmkit rules` lists them. Commands that produce
 artifacts rather than verdicts (`diff`, `build`, `contract`, `snapshot`, …) are
 not gates and keep their own flags.
 
@@ -738,6 +738,42 @@ separate baselines — pick one spelling and list it in `vlmkit.gates.json`).
 
 Runnable example plus a React + Vite gallery to copy:
 [`examples/story-gallery/`](../examples/story-gallery/).
+
+### Cross-renderer component parity (`check renderer-parity`)
+
+Compare a project's actual framework implementation with its generated
+candidate at every case, viewport, and interaction step in a canonical JSON
+manifest:
+
+```bash
+vlmkit check renderer-parity \
+  --manifest ../Yami-kumo/fixtures/kumo-cases.json \
+  --gallery http://localhost:4173/parity \
+  --out test-results/kumo-parity
+```
+
+The gallery implements `window.mountParity({caseId, source})` and
+`window.unmountParity()`, mounting only one source into a stable
+`[data-parity-root][data-case-id][data-source]` testbed at a time. `source` is
+`react` for the real reference implementation or `moonbit` for the generated
+candidate. The manifest declares its pinned library version, cases, viewports,
+and optional `focus`, `hover`, `click`, `fill`, and keyboard `press` actions.
+Action targets use `data-parity-target`; optional expectations can assert a
+resulting attribute or text.
+
+The gallery also exposes `window.parityKumoVersion`, which must match the
+manifest pin. The capture rejects browser errors, failed resource requests,
+duplicate DOM IDs, and unresolved HTML/ARIA ID references. ID references are
+compared by their structural target inside the mounted root, so generated ID
+spelling may differ while label and control associations still have to match.
+Declared viewports are limited to 16 megapixels for bounded captures.
+
+The gate fails on any pixel difference, computed-style or relative-layout
+difference, DOM/ARIA mismatch, action-event mismatch, missing case/state,
+zero-sized or empty capture, or failed action assertion. It writes each source
+PNG and DOM snapshot, a pixel-diff PNG when paint differs, and `report.json`
+under `--out`. No model API or secret is used. Its guarantee covers the API
+cases, states, and viewports present in the manifest.
 
 ### Computer use (`check grounding`)
 
