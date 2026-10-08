@@ -26,9 +26,17 @@ export const rendererParityGate = defineGate<RendererParityReport, RendererParit
 independently at every declared viewport and interaction state. The gallery
 must expose window.mountParity({caseId,source}) / window.unmountParity(), with
 one [data-parity-root][data-case-id][data-source] mounted at a time. The gate
-compares exact PNG pixels, every computed style, relative layout, DOM/ARIA
-semantics, and declared focus/hover/click/fill outcomes. Missing cases, empty
-captures, or mismatched dimensions fail the gate.
+compares exact RGBA PNG pixels, every computed style, relative layout, DOM/ARIA
+semantics, and document-wide action event sequences covering focus/blur,
+keyboard, click, input, and change events; hover also checks pointer enter/leave. expect.clickCount can assert
+activation counts, and viewports can scope an action to known declared
+viewports. Missing cases, empty captures, unsettled transitions, or mismatched
+dimensions fail the gate.
+
+--timeout bounds each navigation, gallery readiness wait, source mount,
+interaction, settle, and capture from the Node host. If page-side work stalls,
+the active pages close, the remaining matrix is aborted, and the report records
+the deadline failure plus missing coverage.
 
 The manifest is the scope of the guarantee: only its component cases, states,
 and viewports are covered. No model API or secret is used.
@@ -52,7 +60,7 @@ and viewports are covered. No model API or secret is used.
       id: "interaction-failed",
       title: "Declared interaction did not produce its required state",
       severity: "suspect",
-      docs: "Action targets must be marked with data-parity-target and satisfy the declared expectation.",
+      docs: "Action targets must be marked with data-parity-target and satisfy the declared state, text, attribute, or click-count expectation.",
     },
     {
       id: "renderer-drift",

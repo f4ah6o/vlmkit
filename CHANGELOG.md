@@ -5,7 +5,7 @@ Dates are YYYY-MM-DD.
 
 ## Unreleased
 
-- Add `check renderer-parity` for deterministic reference-versus-generated component verification across manifest-declared viewports and focus, hover, click, edit, and keyboard states. It compares exact pixels and dimensions, computed styles, layout, DOM/ARIA semantics, and action results; Kumo version, browser-resource failures, and incomplete captures are checked fail-closed.
+- Add `check renderer-parity` for deterministic reference-versus-generated component verification across manifest-declared viewports and focus, blur, hover, click, edit, and keyboard states. It compares exact RGBA pixels and dimensions, computed styles, layout, DOM/ARIA semantics, and document-wide action event sequences; viewport-scoped actions, click-count expectations, Kumo version, browser-resource failures, stalled gallery/font work, and incomplete captures are checked fail-closed. A paired unmodified capture preserves the authored caret color while the screenshot page suppresses blinking-caret raster differences.
 - Add native macOS `scan a11y macos:<bundle-id|pid=N|/path/App.app>` with a local
   Swift AX/ScreenCaptureKit observer (macOS 14+), passive permission diagnostics,
   explicit launch/window selection, native-resolution PNGs, and incomplete-tree

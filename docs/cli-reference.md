@@ -757,9 +757,20 @@ The gallery implements `window.mountParity({caseId, source})` and
 `[data-parity-root][data-case-id][data-source]` testbed at a time. `source` is
 `react` for the real reference implementation or `moonbit` for the generated
 candidate. The manifest declares its pinned library version, cases, viewports,
-and optional `focus`, `hover`, `click`, `fill`, and keyboard `press` actions.
+and optional `focus`, `blur`, `hover`, `click`, `fill`, and keyboard `press` actions.
 Action targets use `data-parity-target`; optional expectations can assert a
-resulting attribute or text.
+resulting attribute, text, or click count. Set `viewports` on an action to a
+non-empty list of declared viewport IDs when that control is only present at
+some sizes; each applicable action is included in expected state coverage.
+
+For every action the document-wide event trace compares `focusin`/`focusout`,
+keydown/keyup, click, input, and change events; `hover` also compares pointer
+over/out. This detects unintended side effects such as a fill firing an extra
+change event or a blur firing input, and records keyup when Tab moves focus
+outside the mounted root. Pointer transitions from other actions are excluded;
+the active and hovered DOM paths and rendered pixels are compared independently.
+Finite CSS transitions settle before state is captured; a transition that does
+not settle fails the capture.
 
 The gallery also exposes `window.parityKumoVersion`, which must match the
 manifest pin. The capture rejects browser errors, failed resource requests,
@@ -768,12 +779,25 @@ compared by their structural target inside the mounted root, so generated ID
 spelling may differ while label and control associations still have to match.
 Declared viewports are limited to 16 megapixels for bounded captures.
 
-The gate fails on any pixel difference, computed-style or relative-layout
+The `--timeout` value bounds each navigation, gallery readiness wait, source
+mount, interaction, font/animation settle, and capture from the Node host. A
+stalled page-side promise closes both capture pages, aborts the remaining matrix,
+and leaves explicit failed-capture and missing-coverage entries in the report.
+
+The gate fails on any exact RGBA pixel difference, computed-style or relative-layout
 difference, DOM/ARIA mismatch, action-event mismatch, missing case/state,
 zero-sized or empty capture, or failed action assertion. It writes each source
 PNG and DOM snapshot, a pixel-diff PNG when paint differs, and `report.json`
 under `--out`. No model API or secret is used. Its guarantee covers the API
 cases, states, and viewports present in the manifest.
+
+The screenshot page hides the blinking caret with one persistent transparent
+caret rule before mounting either renderer. A second page at the same viewport
+mounts each same source and replays the same actions without that rule. The
+runner compares their DOM/ARIA, geometry, computed styles, and action traces
+before accepting a sample, and uses the unmodified page's actual `caret-color`
+in the reported style comparison. This stabilizes only the caret glyph in PNGs;
+it does not mask the component's authored caret style or any other measurement.
 
 ### Computer use (`check grounding`)
 
@@ -1605,7 +1629,7 @@ Install: `pnpm add @mizchi/vlmkit`
 ```
 HTML (file or URL)
     │
-    ├── Pixel diff (pixelmatch v7 → heatmap → diff ratio)
+    ├── Pixel diff (pixelmatch v7 → diagnostic heatmap; exact RGBA equality gates parity)
     ├── Computed style diff (getComputedStyle → property-level changes)
     ├── A11y tree diff (accessibility snapshot → structural changes)
     └── Paint tree diff (Crater BiDi → layout tree comparison)

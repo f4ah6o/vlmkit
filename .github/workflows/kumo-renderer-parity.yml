@@ -1,0 +1,133 @@
+name: Kumo renderer parity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kumo-renderer-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout vlmkit
+        uses: actions/checkout@v6
+
+      - name: Checkout pinned Yami-kumo gallery
+        uses: actions/checkout@v6
+        with:
+          repository: f4ah6o/Yami-kumo
+          # Update only after reviewing the source manifest, production renderer,
+          # and its React Kumo package version together.
+          ref: fa857650d0bb462a862e7f62b808d565a093a1be
+          path: yami-kumo
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.24.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            yami-kumo/pnpm-lock.yaml
+
+      - name: Setup pinned MoonBit compiler
+        uses: hustcer/setup-moonbit@v1.23
+        with:
+          version: 0.10.14+7d59c7ec9
+          setup-core: true
+          core-version: 0.10.14+7d59c7ec9
+
+      - name: Isolate the nested Yami-kumo workspace
+        run: |
+          printf 'packages:\n  - "."\n' > yami-kumo/pnpm-workspace.yaml
+
+      - name: Install vlmkit dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Yami-kumo dependencies
+        working-directory: yami-kumo
+        run: pnpm install --frozen-lockfile
+
+      - name: Build pinned React and MoonBit gallery
+        working-directory: yami-kumo
+        run: pnpm run build:parity
+
+      - name: Build vlmkit CLI
+        run: pnpm build
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Start static gallery preview
+        run: |
+          setsid pnpm --dir yami-kumo exec vp preview --host 127.0.0.1 --port 4173 --strictPort \
+            > "$RUNNER_TEMP/yami-parity-preview.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/yami-parity-preview.pid"
+          ready=0
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:4173/parity; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$RUNNER_TEMP/yami-parity-preview.log"
+            exit 1
+          fi
+
+      - name: Run exact 97-case renderer parity gate
+        run: |
+          node dist/vlmkit.mjs check renderer-parity \
+            --manifest yami-kumo/fixtures/kumo-cases.json \
+            --gallery http://127.0.0.1:4173/parity \
+            --out test-results/kumo-renderer-parity
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { readFile } from "node:fs/promises";
+          const report = JSON.parse(await readFile("test-results/kumo-renderer-parity/report.json", "utf8"));
+          assert.equal(report.ok, true, "renderer parity report must pass");
+          assert.equal(report.cases, 97, "pinned gallery must contain 97 cases");
+          assert.equal(report.viewports, 2, "pinned gallery must cover both declared viewports");
+          assert.equal(report.comparisons.length, 268, "all 268 declared states must be captured");
+          console.log("Verified 97 cases, two viewports, and 268 state comparisons.");
+          NODE
+
+      - name: Run browser-backed fail-closed controls
+        run: |
+          node scripts/renderer-parity-negative-controls.mjs \
+            --cli dist/vlmkit.mjs \
+            --manifest yami-kumo/fixtures/kumo-cases.json \
+            --gallery http://127.0.0.1:4173/parity \
+            --out test-results/kumo-renderer-parity-negative-controls
+
+      - name: Stop static gallery preview
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/yami-parity-preview.pid" ]; then
+            kill -- "-$(cat "$RUNNER_TEMP/yami-parity-preview.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload parity reports and captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kumo-renderer-parity
+          path: |
+            test-results/kumo-renderer-parity/**
+            test-results/kumo-renderer-parity-negative-controls/**
+            ${{ runner.temp }}/yami-parity-preview.log
+          if-no-files-found: warn

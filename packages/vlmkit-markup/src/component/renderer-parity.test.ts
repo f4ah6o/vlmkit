@@ -88,6 +88,92 @@ describe("renderer parity manifest", () => {
     if (!missingKey.ok) assert.match(missingKey.failures.map((failure) => failure.message).join(" "), /needs a key/);
   });
 
+  it("accepts blur actions as an explicit interaction state", () => {
+    const result = validateRendererParityManifest(
+      manifest({
+        cases: [
+          {
+            id: "input-blur",
+            component: "input",
+            interactions: [
+              { type: "focus", target: "input" },
+              { type: "blur", target: "input" },
+            ],
+          },
+        ],
+      }),
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.manifest.cases[0]!.interactions?.[1]?.type, "blur");
+  });
+
+  it("accepts viewport-scoped actions and validates every declared viewport", () => {
+    const scoped = validateRendererParityManifest(
+      manifest({
+        viewports: [
+          { id: "desktop", width: 1280, height: 900 },
+          { id: "mobile", width: 390, height: 844 },
+        ],
+        cases: [
+          {
+            id: "mobile-drawer",
+            component: "appShell",
+            interactions: [{ type: "click", target: "sidebarTrigger", viewports: ["mobile"] }],
+          },
+        ],
+      }),
+    );
+    assert.equal(scoped.ok, true);
+    if (scoped.ok) assert.deepEqual(scoped.manifest.cases[0]!.interactions?.[0]?.viewports, ["mobile"]);
+
+    for (const viewports of [[], ["tablet"], ["mobile", "mobile"]]) {
+      const invalid = validateRendererParityManifest(
+        manifest({
+          viewports: [
+            { id: "desktop", width: 1280, height: 900 },
+            { id: "mobile", width: 390, height: 844 },
+          ],
+          cases: [
+            {
+              id: "mobile-drawer",
+              component: "appShell",
+              interactions: [{ type: "click", target: "sidebarTrigger", viewports }],
+            },
+          ],
+        }),
+      );
+      assert.equal(invalid.ok, false);
+    }
+  });
+
+  it("validates nonnegative click-count expectations for disabled controls", () => {
+    const valid = validateRendererParityManifest(
+      manifest({
+        cases: [
+          {
+            id: "disabled-button",
+            component: "button",
+            interactions: [{ type: "press", target: "button", value: "Enter", expect: { clickCount: 0 } }],
+          },
+        ],
+      }),
+    );
+    assert.equal(valid.ok, true);
+
+    const invalid = validateRendererParityManifest(
+      manifest({
+        cases: [
+          {
+            id: "disabled-button",
+            component: "button",
+            interactions: [{ type: "press", target: "button", value: "Enter", expect: { clickCount: -1 } }],
+          },
+        ],
+      }),
+    );
+    assert.equal(invalid.ok, false);
+  });
+
   it("fails closed on empty coverage, duplicate ids, unsupported APIs, and bad interaction targets", () => {
     const empty = validateRendererParityManifest(manifest({ cases: [] }));
     assert.equal(empty.ok, false);
@@ -156,6 +242,35 @@ describe("renderer parity comparison", () => {
     assert.equal(result.pixel.differentPixels, 1);
   });
 
+  it("counts alpha-only changes as exact RGBA pixel drift", () => {
+    const changed = PNG.sync.read(reference.png);
+    changed.data[3] = 128;
+    const result = compareRendererParityData({
+      reference,
+      candidate: { ...reference, png: PNG.sync.write(changed) },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.pixel.differentPixels, 1);
+  });
+
+  it("counts RGB changes in fully transparent pixels", () => {
+    const transparentReference = { ...reference, png: png([0, 0, 0, 0]) };
+    const changed = PNG.sync.read(transparentReference.png);
+    changed.data[0] = 255;
+    changed.data[1] = 255;
+    changed.data[2] = 255;
+    const transparentCandidate = {
+      ...transparentReference,
+      png: PNG.sync.write(changed),
+    };
+    const result = compareRendererParityData({
+      reference: transparentReference,
+      candidate: transparentCandidate,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.pixel.differentPixels, 1);
+  });
+
   it("fails on different screenshot dimensions even when the shared pixels match", () => {
     const result = compareRendererParityData({
       reference,
@@ -193,6 +308,48 @@ describe("renderer parity comparison", () => {
     assert.ok(result.semanticDiffs.length > 0);
     assert.ok(result.layoutDiffs.length > 0);
     assert.ok(result.behaviorDiffs.length > 0);
+  });
+
+  it("fails when a renderer emits an unexpected input or change event during another action", () => {
+    const result = compareRendererParityData({
+      reference: {
+        ...reference,
+        action: { events: [{ type: "focusin", target: "input" }] },
+      },
+      candidate: {
+        ...reference,
+        action: {
+          events: [
+            { type: "focusin", target: "input" },
+            { type: "input", target: "input" },
+          ],
+        },
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.behaviorDiffs.join(" "), /event sequence differs/);
+  });
+
+  it("fails when keyboard activation is missing or duplicated", () => {
+    const expectedEvents = [
+      { type: "keydown", target: "button" },
+      { type: "keyup", target: "button" },
+      { type: "click", target: "button" },
+    ];
+    for (const candidateEvents of [
+      [
+        { type: "keydown", target: "button" },
+        { type: "keyup", target: "button" },
+      ],
+      [...expectedEvents, { type: "click", target: "button" }],
+    ]) {
+      const result = compareRendererParityData({
+        reference: { ...reference, action: { events: expectedEvents } },
+        candidate: { ...reference, action: { events: candidateEvents } },
+      });
+      assert.equal(result.ok, false);
+      assert.match(result.behaviorDiffs.join(" "), /event sequence differs/);
+    }
   });
 
   it("fails when equivalent-looking interaction markers point to different DOM elements", () => {
