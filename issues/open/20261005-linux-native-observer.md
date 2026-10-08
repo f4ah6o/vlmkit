@@ -34,9 +34,15 @@ Record implementation and actual acceptance separately for each profile:
 
 Before broader X11 admission: GTK/Qt and real gpui.mbt/MZed semantics, multi-window,
 resize/move, absent/partial AT-SPI, duplicate identities, target exit, CSD/SSD,
-scaling and retained pixel/tree alignment evidence. Add a distinct visited-node/
-reference budget before broad desktop admission: the current emitted-node cap and
-15-second AT-SPI deadline do not bound every eagerly acquired child reference.
+scaling and retained pixel/tree alignment evidence. The Linux observer now uses
+lazy child acquisition and per-request 20,000-visited-child / 50,000-object-reference
+budgets, reserved before remote child lookup; it releases request-owned refs after
+each request while preserving the selected window's dedicated identity ref. The
+emitted-node and depth caps remain 10,000 and 128, with one reference slot within
+the request cap reserved for selected-window geometry revalidation before capture.
+This closes the original eager-
+reference gap in the implementation, with pure wide/deep/cyclic/foreign-tree tests;
+broader desktop admission still requires its own live qualification evidence.
 Missing GPUI accessibility is
 a framework gap, not permission to synthesize a passing tree.
 

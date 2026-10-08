@@ -34,13 +34,19 @@ typelib is required.
   observer, **not** a security boundary against malicious X11 clients. Explicit
   foreign-PID embedded child windows are refused. No cross-client X11 security
   guarantees are asserted.
-- Traversal is cycle-safe, bounded to 10,000 emitted nodes / depth 128 maximum, 15 seconds
-  per AT-SPI request sequence and 1 second per remote AT-SPI call. Partial trees
-  report truncation/errors. Missing geometry is diagnostic, never invented.
-- The emitted-node cap is not a total visited/reference cap: geometry-less or
-  very wide accessibility trees may acquire additional child references before
-  the deadline. A separate visited/reference budget is required before broader
-  desktop admission; the current evidence covers the bounded fixture only.
+- Traversal is cycle-safe and lazy: it acquires one child reference at a time,
+  only after checking request-wide limits of 20,000 visited children and 50,000
+  AT-SPI object-reference attempts. The emitted-node cap is 10,000 and depth is
+  capped at 128. All request-owned object refs are released at the end of each
+  request; the selected window identity has its own dedicated retained ref. One
+  slot within the reference cap is reserved for final selected-window geometry
+  revalidation before pixel capture.
+  Requests also have a 15-second AT-SPI deadline and 1-second per-call timeout.
+  Partial trees report truncation and the specific budget diagnostic. Missing
+  geometry is diagnostic, never invented.
+- These budgets close the eager-reference gap for the collector and window
+  enumeration. They do not qualify additional desktop profiles; live GTK/Xvfb
+  acceptance and the broader X11/Wayland follow-ups remain separate.
 - Names, toolkit-exposed accessible IDs, roles, states and native action names
   are observed. Action names have an `atspi:` prefix; controls do not receive
   synthetic `tap` actions. Values and text contents are not collected in this
