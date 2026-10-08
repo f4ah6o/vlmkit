@@ -83,6 +83,12 @@ const BASE_ARGV: Record<string, () => string[]> = {
   "check drift component": () => ["page.html", "--selector", ".card"],
   "check drift pages": () => ["--selector", ".card", "--urls", "http://a.test/", "--urls", "http://b.test/"],
   "check story": () => ["Button/Primary", "--gallery", "http://localhost:5173/"],
+  "check renderer-parity": () => [
+    "--manifest",
+    tempJson("manifest.json", { schemaVersion: 1, kumoVersion: "2.14.0", viewports: [], cases: [] }),
+    "--gallery",
+    "http://localhost:4173/parity",
+  ],
 };
 
 async function navigatingGates(): Promise<AnyGateDefinition[]> {
@@ -137,13 +143,13 @@ describe("page-load options on the gates that navigate", () => {
 
   it("covers every one of them, with the exceptions named and justified", async () => {
     const gates = await navigatingGates();
-    // 28 as of 2026-09-25: 26 with a `path-or-url` source plus the two that take
+    // 30 as of 2026-10-08: 28 with a `path-or-url` source plus the two that take
     // a URL through a flag. A new one lands here first, which is the cheapest
     // place to notice it needs these flags. (23 → 24 `check grounding`,
     // 24 → 25 `check composition`, 25 → 26 `check color`, 26 → 27 `scan style`,
     // 27 → 28 `scan a11y`, whose source is a page or a uiautomator dump,
-    // 28 → 29 `check responsive`.)
-    assert.equal(gates.length, 29, gates.map(command).join(", "));
+    // 28 → 29 `check responsive`, 29 → 30 `check renderer-parity`.)
+    assert.equal(gates.length, 30, gates.map(command).join(", "));
 
     const missing: string[] = [];
     for (const gate of gates) {
