@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -170,10 +171,96 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
 
     def test_doctor_typelib_check_does_not_import_or_initialize_gtk(self) -> None:
         source = (ENV / "doctor.sh").read_text(encoding="utf-8")
+        self.assertIn('gi.require_foreign("cairo")', source)
+        self.assertLess(source.index('gi.require_foreign("cairo")'), source.index('repository.require("Gtk", "3.0", 0)'))
         self.assertIn('repository.require("Gtk", "3.0", 0)', source)
         self.assertIn('repository.require("Atk", "1.0", 0)', source)
+        self.assertIn("blocked 'host GTK AT-SPI bridge module missing", source)
         self.assertNotIn("from gi.repository import Atk, Gtk", source)
         self.assertNotIn("Gtk.init", source)
+
+    def test_doctor_blocks_missing_cairo_foreign_converter_with_mock_python(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            mock_python = temp_path / "python-with-mocked-cairo.py"
+            source_log = temp_path / "python-probes.log"
+            mock_python.write_text(
+                "#!/bin/sh\n"
+                "body=$(cat)\n"
+                "printf '%s\\n---\\n' \"$body\" >> \"$MOCK_PYTHON_PROBE_LOG\"\n"
+                "case \"$body\" in\n"
+                "  *'gi.require_foreign(\"cairo\")'*) [ \"${MOCK_CAIRO_AVAILABLE:-0}\" = 1 ] ;;\n"
+                "  *'repository.require(\"Gtk\", \"3.0\", 0)'*) exit 0 ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            mock_python.chmod(0o755)
+            env = dict(os.environ)
+            env["VLMKIT_LINUX_PREFIX"] = str(temp_path / "isolated prefix")
+            env["VLMKIT_LINUX_PYTHON"] = str(mock_python)
+            env["MOCK_PYTHON_PROBE_LOG"] = str(source_log)
+
+            result = subprocess.run([str(ENV / "doctor.sh")], env=env, text=True, capture_output=True, check=False)
+            available_env = dict(env)
+            available_env["MOCK_CAIRO_AVAILABLE"] = "1"
+            available = subprocess.run([str(ENV / "doctor.sh")], env=available_env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotEqual(available.returncode, 0, "the intentionally incomplete host should remain blocked by other prerequisites")
+            self.assertIn("BLOCKED  Python PyGObject Cairo foreign converter unavailable", result.stdout)
+            self.assertIn("PASS  Python PyGObject Cairo foreign converter", available.stdout)
+            probes = source_log.read_text(encoding="utf-8")
+            self.assertIn('gi.require_foreign("cairo")', probes)
+            self.assertIn('repository.require("Gtk", "3.0", 0)', probes)
+            self.assertNotIn("Gtk.init", probes)
+            self.assertIn("D-Bus session not probed", result.stdout)
+
+            def issue_count(proc: subprocess.CompletedProcess[str]) -> int:
+                match = re.search(r"Preflight found (\d+) issue", proc.stdout + proc.stderr)
+                self.assertIsNotNone(match, proc.stdout + proc.stderr)
+                return int(match.group(1))
+
+            self.assertEqual(issue_count(result), issue_count(available) + 1, "missing Cairo converter must increment the blocked prerequisite count")
+
+    def test_runner_stops_after_doctor_blocks_before_dbus_or_xvfb(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            repo = temp_path / "repo"
+            env_dir = repo / "native" / "linux" / "environment"
+            env_dir.mkdir(parents=True)
+            shutil.copy2(ENV / "common.sh", env_dir / "common.sh")
+            shutil.copy2(ENV / "run-fixture.sh", env_dir / "run-fixture.sh")
+            shutil.copy2(LOCK, env_dir / "lock.json")
+            doctor = env_dir / "doctor.sh"
+            doctor.write_text(
+                "#!/bin/sh\n"
+                "echo 'BLOCKED  Python PyGObject Cairo foreign converter unavailable'\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            doctor.chmod(0o755)
+
+            stub_bin = temp_path / "stub-bin"
+            stub_bin.mkdir()
+            launch_marker = temp_path / "display-launch-attempted"
+            for name in ("dbus-run-session", "xvfb-run"):
+                stub = stub_bin / name
+                stub.write_text("#!/bin/sh\nprintf called > \"$FIXTURE_LAUNCH_MARKER\"\nexit 99\n", encoding="utf-8")
+                stub.chmod(0o755)
+
+            evidence_dir = temp_path / "fixture evidence"
+            env = dict(os.environ)
+            env["VLMKIT_LINUX_PREFIX"] = str(temp_path / "private prefix")
+            env["VLMKIT_LINUX_EVIDENCE_DIR"] = str(evidence_dir)
+            env["VLMKIT_LINUX_PYTHON"] = "/usr/bin/python3"
+            env["FIXTURE_LAUNCH_MARKER"] = str(launch_marker)
+            env["PATH"] = f"{stub_bin}:{env.get('PATH', '/usr/bin:/bin')}"
+
+            result = subprocess.run([str(env_dir / "run-fixture.sh")], env=env, text=True, capture_output=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("BLOCKED  Python PyGObject Cairo foreign converter unavailable", result.stdout)
+            self.assertFalse(launch_marker.exists(), "D-Bus and Xvfb launchers must not run after a failed doctor")
+            self.assertFalse(evidence_dir.exists(), "runner must stop before creating fixture evidence when doctor fails")
 
     def test_runner_isolated_and_records_exact_source_hashes(self) -> None:
         source = (ENV / "run-fixture.sh").read_text(encoding="utf-8")

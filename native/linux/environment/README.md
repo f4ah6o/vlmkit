@@ -48,7 +48,10 @@ host must provide:
 
 - Debian 13 (trixie), x86_64, with the runtime shared libraries needed by the
   pinned Xvfb/X11 tools
-- system Python with PyGObject and Gtk 3 / Atk typelibs
+- Debian 13's Python 3.13 with PyGObject, Pycairo, the ABI-matched
+  `python3-gi-cairo` foreign converter, and Gtk 3 / Atk typelibs. The doctor
+  checks `gi.require_foreign("cairo")` before checking the Gtk / Atk
+  typelibs; it does not initialize Gtk or open a display.
 - `at-spi2-core`, including its registry / bus launcher, plus the GTK
   accessibility bridge (`libatk-adaptor`)
 - XKB data at `/usr/share/X11/xkb` and `/usr/bin/xkbcomp` (this Debian Xvfb

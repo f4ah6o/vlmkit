@@ -29,6 +29,7 @@ done
 failure_count=0
 pass() { printf 'PASS  %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; failure_count=$((failure_count + 1)); }
+blocked() { printf 'BLOCKED  %s\n' "$1"; failure_count=$((failure_count + 1)); }
 
 printf 'VLMKit Linux observer test profile (read-only preflight)\n'
 printf 'Prefix: %s\n' "$VLMKIT_LINUX_PREFIX"
@@ -37,7 +38,7 @@ printf 'Lock SHA256: %s\n' "$(vlmkit_lock_sha256)"
 if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
   pass 'Linux x86_64 host'
 else
-  fail "Linux x86_64 host required (found $(uname -s) / $(uname -m))"
+  blocked "Linux x86_64 host required (found $(uname -s) / $(uname -m))"
 fi
 
 os_id='unknown'
@@ -51,7 +52,7 @@ fi
 if [[ "$os_id" == "debian" && "$os_codename" == "trixie" ]]; then
   pass 'Debian 13 (trixie) host matches the locked package profile'
 else
-  fail "Debian 13 (trixie) is required for this package lock (found $os_id / $os_codename)"
+  blocked "Debian 13 (trixie) is required for this package lock (found $os_id / $os_codename)"
 fi
 
 lock_sha="$(vlmkit_lock_sha256)"
@@ -76,11 +77,20 @@ else
 fi
 
 for tool in dbus-run-session dbus-daemon timeout ldd ldconfig find grep gpg python3 xz stat sha256sum; do
-  if command -v "$tool" >/dev/null 2>&1; then pass "host command $tool"; else fail "host command missing: $tool"; fi
+  if command -v "$tool" >/dev/null 2>&1; then pass "host command $tool"; else blocked "host command missing: $tool"; fi
 done
 
 python="${VLMKIT_LINUX_PYTHON:-/usr/bin/python3}"
 if [[ -x "$python" ]]; then
+  if "$python" - <<'PY' >/dev/null 2>&1
+import gi
+gi.require_foreign("cairo")
+PY
+  then
+    pass "Python PyGObject Cairo foreign converter ($python)"
+  else
+    blocked "Python PyGObject Cairo foreign converter unavailable to $python; host must provide python3-gi-cairo and python3-cairo built for this Python ABI"
+  fi
   if "$python" - <<'PY' >/dev/null 2>&1
 import gi
 repository = gi.Repository.get_default()
@@ -90,10 +100,10 @@ PY
   then
     pass "Python Gtk 3 / Atk typelibs ($python)"
   else
-    fail "Python Gtk 3 / Atk typelibs unavailable to $python; host must provide PyGObject, GTK 3 and Atk"
+    blocked "Python Gtk 3 / Atk typelibs unavailable to $python; host must provide PyGObject, GTK 3 and Atk"
   fi
 else
-  fail "Host Python not found: $python (set VLMKIT_LINUX_PYTHON to a system Python with Gtk 3 / Atk)"
+  blocked "Host Python not found: $python (set VLMKIT_LINUX_PYTHON to a system Python with Gtk 3 / Atk)"
 fi
 
 if command -v gpg >/dev/null 2>&1 && python3 "$VLMKIT_ENV_DIR/verify_provenance.py" "$VLMKIT_LINUX_LOCK"; then
@@ -119,8 +129,8 @@ else
   fail 'signed Debian Packages index cache is missing, corrupt, or does not match package lock records'
 fi
 
-if [[ -d /usr/share/X11/xkb ]]; then pass 'host XKB data (/usr/share/X11/xkb)'; else fail 'host XKB data missing (/usr/share/X11/xkb; provide xkb-data)'; fi
-if [[ -x /usr/bin/xkbcomp ]]; then pass 'host XKB helper (/usr/bin/xkbcomp)'; else fail 'host XKB helper missing (/usr/bin/xkbcomp; this Xvfb build does not use the private overlay path)'; fi
+if [[ -d /usr/share/X11/xkb ]]; then pass 'host XKB data (/usr/share/X11/xkb)'; else blocked 'host XKB data missing (/usr/share/X11/xkb; provide xkb-data)'; fi
+if [[ -x /usr/bin/xkbcomp ]]; then pass 'host XKB helper (/usr/bin/xkbcomp)'; else blocked 'host XKB helper missing (/usr/bin/xkbcomp; this Xvfb build does not use the private overlay path)'; fi
 
 ldconfig_output=''
 if command -v ldconfig >/dev/null 2>&1; then ldconfig_output="$(ldconfig -p 2>/dev/null || true)"; fi
@@ -128,19 +138,19 @@ for library in libatspi.so.0 libatk-1.0.so.0 libgtk-3.so.0 libglib-2.0.so.0 libg
   if [[ "$ldconfig_output" == *"$library"* ]]; then
     pass "host shared library $library"
   else
-    fail "host shared library missing: $library"
+    blocked "host shared library missing: $library"
   fi
 done
 
 if [[ -n "$(find /usr/lib /usr/libexec -type f \( -name at-spi2-registryd -o -name at-spi-bus-launcher \) -print -quit 2>/dev/null || true)" ]]; then
   pass 'host AT-SPI registry / bus launcher'
 else
-  fail 'host AT-SPI registry / bus launcher missing (provide at-spi2-core)'
+  blocked 'host AT-SPI registry / bus launcher missing (provide at-spi2-core)'
 fi
 if [[ -n "$(find /usr/lib -type f -path '*/gtk-3.0/modules/libatk-bridge.so' -print -quit 2>/dev/null || true)" ]]; then
   pass 'host GTK AT-SPI bridge module'
 else
-  fail 'host GTK AT-SPI bridge module missing (provide libatk-adaptor)'
+  blocked 'host GTK AT-SPI bridge module missing (provide libatk-adaptor)'
 fi
 
 ldd_failed=false
@@ -156,7 +166,7 @@ for binary in \
     if [[ -z "$missing" ]]; then
       pass "runtime shared-library resolution for ${binary##*/}"
     else
-      fail "unresolved host shared libraries for ${binary##*/}: ${missing//$'\n'/; }"
+      blocked "unresolved host shared libraries for ${binary##*/}: ${missing//$'\n'/; }"
       ldd_failed=true
     fi
   fi

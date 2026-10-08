@@ -17,7 +17,7 @@ Usage:
 Configuration:
   VLMKIT_LINUX_PREFIX          bootstrap prefix (same default as bootstrap.sh)
   VLMKIT_LINUX_EVIDENCE_DIR    output directory (default: test-results/native/linux)
-  VLMKIT_LINUX_PYTHON          system Python with Gtk 3 / Atk (default: /usr/bin/python3)
+  VLMKIT_LINUX_PYTHON          Python 3.13 with Gtk 3 / Atk and the Cairo foreign converter (default: /usr/bin/python3)
   VLMKIT_LINUX_TIMEOUT_SECONDS bounded wall-clock timeout (default: 180)
 
 This command launches only the repository's own GTK fixture. It never attaches

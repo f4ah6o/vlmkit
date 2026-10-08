@@ -73,7 +73,7 @@
     }
   ],
   "hostPrerequisites": [
-    "python3 with PyGObject Gtk 3 and Atk typelibs",
+    "Python 3.13 with PyGObject, Pycairo, the PyGObject Cairo foreign converter (python3-gi-cairo), and Gtk 3 / Atk typelibs",
     "at-spi2-core and the GTK AT-SPI bridge (registry daemon and bridge module)",
     "the host shared libraries used by Xvfb, xcompmgr, libatspi, and the X11 observer",
     "xkb-data at /usr/share/X11/xkb",
