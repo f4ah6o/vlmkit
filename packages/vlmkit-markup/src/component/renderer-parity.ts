@@ -1058,9 +1058,16 @@ async function screenshotParityRoot(
   root: import("playwright").Locator,
   path: string,
 ): Promise<Buffer> {
-  // The visual-only page already has a persistent caret-color rule; leaving
-  // Playwright's capture stylesheet untouched avoids per-shot paint changes.
-  return await root.screenshot({ path, scale: "css", animations: "disabled", caret: "initial" });
+  // Interactions are also replayed on the author-style page, which brings that
+  // page to the front last. Capture the visual page in the foreground so native
+  // focus painting does not depend on whether its tab is backgrounded. Finite
+  // animations already settled before this point; do not let screenshot capture
+  // mutate their state as Playwright's `disabled` mode does.
+  await page.bringToFront();
+  await waitForStableRender(page);
+  // The visual-only page has a persistent caret-color rule; leaving Playwright's
+  // capture stylesheet untouched avoids per-shot paint changes.
+  return await root.screenshot({ path, scale: "css", animations: "allow", caret: "initial" });
 }
 
 async function applyInteraction(
