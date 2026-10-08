@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "profile": "debian-trixie-amd64-x11-fixture",
+  "platform": {
+    "os": "linux",
+    "distribution": "Debian GNU/Linux 13",
+    "codename": "trixie",
+    "architecture": "amd64"
+  },
+  "provenance": {
+    "repository": "https://deb.debian.org/debian/",
+    "suite": "trixie",
+    "component": "main",
+    "inReleaseDate": "2026-09-12T07:55:41Z",
+    "inReleaseVersion": "13.7",
+    "inReleaseSize": 140421,
+    "inReleaseSha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
+    "archiveKeyringSize": 55918,
+    "archiveKeyringSha256": "506b815cbb32d9b6066b4a2aa524071e071761e7e7f68c3ac74f3061ba852017",
+    "verifiedSignerPrimaryFingerprints": [
+      "B8B80B5B623EAB6AD8775C45B7C5D7D6350947F8",
+      "04B54C3CDCA79751B16BC6B5225629DF75B188BD",
+      "41587F7DB8C774BCCF131416762F67A0B2C39DE4"
+    ],
+    "packagesIndexCompressedPath": "dists/trixie/main/binary-amd64/Packages.xz",
+    "packagesIndexCompressedSize": 9678380,
+    "packagesIndexCompressedSha256": "7778d3e3f303b7ddb8ce0fe7c8d57473a076c6bf2e8f241f75421d2396352498",
+    "packagesIndex": "dists/trixie/main/binary-amd64/Packages",
+    "packagesIndexSize": 56620099,
+    "packagesIndexSha256": "4f2c68d67001d595fbd343f6dbad44468953a51c4d9dec3a4803249f6e295940",
+    "signatureChain": "The bundled InRelease signature is verified with the bundled Debian archive keyring. The Packages index digest is checked against that signed release metadata; the exact package records and SHA256 values were read from that Packages index."
+  },
+  "packages": [
+    {
+      "name": "xvfb",
+      "version": "2:21.1.16-1.3+deb13u3",
+      "architecture": "amd64",
+      "filename": "pool/main/x/xorg-server/xvfb_21.1.16-1.3+deb13u3_amd64.deb",
+      "size": 3198040,
+      "sha256": "365da2b6c93339f34337c434a9489bb6411a240fa47b9f49693d3091745f28c2"
+    },
+    {
+      "name": "xserver-common",
+      "version": "2:21.1.16-1.3+deb13u3",
+      "architecture": "all",
+      "filename": "pool/main/x/xorg-server/xserver-common_21.1.16-1.3+deb13u3_all.deb",
+      "size": 2410088,
+      "sha256": "dc1d37303c103b23c40cd1ea694c5c6561e0e8dc1734a73c7a0ae0ef080e7fcc"
+    },
+    {
+      "name": "xauth",
+      "version": "1:1.1.2-1.1",
+      "architecture": "amd64",
+      "filename": "pool/main/x/xauth/xauth_1.1.2-1.1_amd64.deb",
+      "size": 35856,
+      "sha256": "14687bc8e3af350738f61e5a872bcdd83725694cb09d448d75077abd6249679a"
+    },
+    {
+      "name": "x11-xkb-utils",
+      "version": "7.7+9",
+      "architecture": "amd64",
+      "filename": "pool/main/x/x11-xkb-utils/x11-xkb-utils_7.7+9_amd64.deb",
+      "size": 158552,
+      "sha256": "745e29c79bb435d057cdbf8bb59a35fa33e818e566cb754674f44d381ccd4317"
+    },
+    {
+      "name": "xcompmgr",
+      "version": "1.1.8-1",
+      "architecture": "amd64",
+      "filename": "pool/main/x/xcompmgr/xcompmgr_1.1.8-1_amd64.deb",
+      "size": 27196,
+      "sha256": "70e650e0e177cc06a6aa06ee5578754a6560e6a175cf82d6525fb3126428289d"
+    }
+  ],
+  "hostPrerequisites": [
+    "python3 with PyGObject Gtk 3 and Atk typelibs",
+    "at-spi2-core and the GTK AT-SPI bridge (registry daemon and bridge module)",
+    "the host shared libraries used by Xvfb, xcompmgr, libatspi, and the X11 observer",
+    "xkb-data at /usr/share/X11/xkb",
+    "/usr/bin/xkbcomp (compiled-in helper path for this Debian Xvfb build)",
+    "gpg, curl, xz, dpkg-deb, sha256sum, stat, flock, dbus-run-session, timeout, and standard GNU/Linux shell utilities"
+  ]
+}

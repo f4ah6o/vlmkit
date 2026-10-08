@@ -62,11 +62,17 @@ Capture returns `backend: "x11"`, `frameKind: "client-window"`, and
 
 ```sh
 python3 -m unittest discover -s native/linux -p 'test_*.py' -v
-# On a provisioned Linux desktop-test host:
-dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
-  native/linux/with-compositor.sh /usr/bin/python3 native/linux/integration.py \
-    --out test-results/native/linux
+# On a prepared Debian 13 (trixie), x86_64 test host:
+native/linux/environment/bootstrap.sh
+native/linux/environment/doctor.sh
+native/linux/environment/run-fixture.sh
 ```
+
+The environment scripts pin and verify the Xvfb/X11 overlay, document the
+host-managed GTK/AT-SPI prerequisites, and save timestamped fixture evidence.
+See [environment setup](environment/README.md). The default doctor is read-only
+and does not probe D-Bus; the fixture runner explicitly starts its own D-Bus and
+Xvfb sessions and clears inherited Wayland/AT-SPI bus selectors before launch.
 
 Integration dependencies: GTK3/Atk Python GI, `at-spi2-core`, `libatk-adaptor`,
 D-Bus, Xvfb, xcompmgr (started before the fixture), and the shared libraries above. The fixture uses only its own local
