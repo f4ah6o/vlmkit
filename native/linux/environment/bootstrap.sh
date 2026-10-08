@@ -5,7 +5,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/common.sh"
 
 usage() {
   cat <<'EOF'
-Bootstrap the pinned Debian Trixie X11 fixture tools into a private prefix.
+Bootstrap the pinned Debian Trixie X11 tools and Python bindings into a private prefix.
 
 Usage:
   native/linux/environment/bootstrap.sh
@@ -13,7 +13,7 @@ Usage:
 Configuration:
   VLMKIT_LINUX_PREFIX  install/cache prefix (default: $XDG_CACHE_HOME/vlmkit/…)
 
-This verifies Debian's signed package index, downloads five pinned .deb files,
+This verifies Debian's signed package index, downloads eight pinned .deb files,
 and extracts them without root, apt, package maintainer scripts, or changes to
 the host system.
 EOF
@@ -55,9 +55,15 @@ if provenance.get("packagesIndex") != "dists/trixie/main/binary-amd64/Packages":
 if provenance.get("packagesIndexCompressedPath") != "dists/trixie/main/binary-amd64/Packages.xz":
     raise SystemExit("unexpected compressed Debian package index provenance")
 packages = lock.get("packages", [])
-expected_names = ["xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr"]
+expected_names = ["xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr", "python3-gi", "python3-cairo", "python3-gi-cairo"]
 if [p.get("name") for p in packages] != expected_names:
-    raise SystemExit("expected the pinned Xvfb/X11 package set")
+    raise SystemExit("expected the pinned Xvfb/X11 and Python GI/Cairo package set")
+if lock.get("pythonRuntime") != {
+    "version": "3.13",
+    "soabi": "cpython-313-x86_64-linux-gnu",
+    "moduleDirectory": "usr/lib/python3/dist-packages",
+}:
+    raise SystemExit("unexpected Python ABI or module directory")
 for p in packages:
     fields = [p["name"], p["version"], p["architecture"], p["filename"], str(p["size"]), p["sha256"]]
     if any("\t" in v or "\n" in v for v in fields):

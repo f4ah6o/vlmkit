@@ -1,8 +1,9 @@
 # Linux native-observer fixture environment
 
 These scripts make the repository's Linux X11/GTK fixture repeatable on a
-Debian 13 (trixie), x86_64 test host. The lock covers the Xvfb display tools;
-it does not install packages into the host.
+Debian 13 (trixie), x86_64 test host. The lock covers the Xvfb display tools
+and matching PyGObject/Pycairo modules; it does not install packages into the
+host.
 
 ## One-time setup and checks
 
@@ -14,10 +15,14 @@ native/linux/environment/doctor.sh
 The bootstrap verifies the bundled Debian signature, downloads the compressed
 `Packages` index from Debian's signed by-hash URL, checks its signed SHA-256 and
 size, and confirms every locked package record against that index. It then
-downloads five exact `.deb` files from Debian's official pool, checks each
+downloads eight exact `.deb` files from Debian's official pool, checks each
 archive's size, SHA-256, package name, version and architecture, and extracts
-them into a user-writable overlay. It is safe to repeat. It does not use
-`sudo`, apt, package maintainer scripts, or system directories.
+them into a user-writable overlay. The Python modules live under
+`overlay/usr/lib/python3/dist-packages`; the doctor and fixture runner prepend
+that directory to `PYTHONPATH` so imports use the locked modules. They disable
+Python bytecode writes so validation and the fixture do not alter the managed
+overlay. It is safe to repeat. It does not use `sudo`, apt, package maintainer
+scripts, or system directories.
 The default prefix is under `$XDG_CACHE_HOME` (or `$HOME/.cache`); set
 `VLMKIT_LINUX_PREFIX` to choose another location. The `overlay/` child is owned
 by this script. It refuses to replace an existing unmanaged `overlay/` path.
@@ -46,14 +51,16 @@ part of the lock.
 This is deliberately a small user-space overlay, not a full Linux image. The
 host must provide:
 
-- Debian 13 (trixie), x86_64, with the runtime shared libraries needed by the
-  pinned Xvfb/X11 tools
-- Debian 13's Python 3.13 with PyGObject, Pycairo, the ABI-matched
-  `python3-gi-cairo` foreign converter, and Gtk 3 / Atk typelibs. The doctor
-  checks `gi.require_foreign("cairo")` before checking the Gtk / Atk
-  typelibs; it does not initialize Gtk or open a display.
-- `at-spi2-core`, including its registry / bus launcher, plus the GTK
-  accessibility bridge (`libatk-adaptor`)
+- Debian 13 (trixie), x86_64, with system Python 3.13 using
+  `cpython-313-x86_64-linux-gnu` and the runtime shared libraries needed by
+  the pinned Xvfb/X11 and Python extension modules
+- Gtk 3 / Atk typelibs. The matching PyGObject, Pycairo, and
+  `python3-gi-cairo` modules are in the private overlay. The doctor checks
+  their package versions, module origins and SOABI, then calls
+  `gi.require_foreign("cairo")` before checking the Gtk / Atk typelibs. It does
+  not initialize Gtk or open a display.
+- `at-spi2-core`, including its registry / bus launcher, and the GTK 3
+  accessibility bridge shared library (`libatk-bridge-2.0.so.0`)
 - XKB data at `/usr/share/X11/xkb` and `/usr/bin/xkbcomp` (this Debian Xvfb
   build has that helper path compiled in; the private overlay cannot replace it)
 - `gpg`, `curl`, `xz`, `sha256sum`, `stat`, `dpkg-deb`, and `flock` for locked bootstrap
@@ -62,10 +69,11 @@ host must provide:
 `doctor.sh` checks those prerequisites without starting a D-Bus session or a
 GUI. It reports D-Bus capability only when explicitly invoked as
 `doctor.sh --probe-dbus`; that option creates a short-lived private session
-bus. The bootstrap does not obtain GTK, AT-SPI, Python, D-Bus, XKB data, or
-their shared-library dependency closure, and it never changes host package
-state. Missing host packages must be provisioned by the host owner using the
-host distribution's normal process.
+bus. The bootstrap does not obtain the system Python interpreter, GTK/Atk
+typelibs, AT-SPI, D-Bus, XKB data or their shared-library dependency closure,
+and it never changes host package state.
+Missing host packages must be provisioned by the host owner using the host
+distribution's normal process.
 
 ## Run the isolated fixture
 

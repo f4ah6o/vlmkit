@@ -11,8 +11,11 @@ import sys
 def verify(lock_path: Path, packages_index: Path) -> None:
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     packages = lock["packages"]
-    if [package["name"] for package in packages] != ["xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr"]:
-        raise ValueError("lock does not contain the expected Xvfb/X11 package set")
+    if [package["name"] for package in packages] != [
+        "xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr",
+        "python3-gi", "python3-cairo", "python3-gi-cairo",
+    ]:
+        raise ValueError("lock does not contain the expected Xvfb/X11 and Python GI/Cairo package set")
 
     expected_records = {
         (package["name"], package["version"], package["architecture"]): package

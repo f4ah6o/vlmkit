@@ -30,6 +30,11 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
             "codename": "trixie",
             "architecture": "amd64",
         })
+        self.assertEqual(lock["pythonRuntime"], {
+            "version": "3.13",
+            "soabi": "cpython-313-x86_64-linux-gnu",
+            "moduleDirectory": "usr/lib/python3/dist-packages",
+        })
         provenance = lock["provenance"]
         for key in ("inReleaseSha256", "archiveKeyringSha256", "packagesIndexSha256", "packagesIndexCompressedSha256"):
             self.assertRegex(provenance[key], r"^[0-9a-f]{64}$")
@@ -44,7 +49,14 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
             self.assertRegex(fingerprint, r"^[A-F0-9]{40}$")
 
         packages = lock["packages"]
-        self.assertEqual([p["name"] for p in packages], ["xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr"])
+        self.assertEqual([p["name"] for p in packages], [
+            "xvfb", "xserver-common", "xauth", "x11-xkb-utils", "xcompmgr",
+            "python3-gi", "python3-cairo", "python3-gi-cairo",
+        ])
+        by_name = {p["name"]: p for p in packages}
+        self.assertEqual(by_name["python3-gi"]["version"], "3.50.0-4+b1")
+        self.assertEqual(by_name["python3-cairo"]["version"], "1.27.0-2")
+        self.assertEqual(by_name["python3-gi-cairo"]["version"], "3.50.0-4+b1")
         for package in packages:
             self.assertRegex(package["sha256"], r"^[0-9a-f]{64}$")
             self.assertGreater(package["size"], 0)
@@ -175,7 +187,8 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
         self.assertLess(source.index('gi.require_foreign("cairo")'), source.index('repository.require("Gtk", "3.0", 0)'))
         self.assertIn('repository.require("Gtk", "3.0", 0)', source)
         self.assertIn('repository.require("Atk", "1.0", 0)', source)
-        self.assertIn("blocked 'host GTK AT-SPI bridge module missing", source)
+        self.assertIn("libatk-bridge-2.0.so.0", source)
+        self.assertNotIn("gtk-3.0/modules/libatk-bridge.so", source)
         self.assertNotIn("from gi.repository import Atk, Gtk", source)
         self.assertNotIn("Gtk.init", source)
 
@@ -187,6 +200,7 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
             mock_python.write_text(
                 "#!/bin/sh\n"
                 "body=$(cat)\n"
+                "printf 'PYTHONPATH=%s\\nPYTHONDONTWRITEBYTECODE=%s\\n' \"${PYTHONPATH:-}\" \"${PYTHONDONTWRITEBYTECODE:-}\" >> \"$MOCK_PYTHON_PROBE_LOG\"\n"
                 "printf '%s\\n---\\n' \"$body\" >> \"$MOCK_PYTHON_PROBE_LOG\"\n"
                 "case \"$body\" in\n"
                 "  *'gi.require_foreign(\"cairo\")'*) [ \"${MOCK_CAIRO_AVAILABLE:-0}\" = 1 ] ;;\n"
@@ -207,11 +221,13 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
             available = subprocess.run([str(ENV / "doctor.sh")], env=available_env, text=True, capture_output=True, check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotEqual(available.returncode, 0, "the intentionally incomplete host should remain blocked by other prerequisites")
-            self.assertIn("BLOCKED  Python PyGObject Cairo foreign converter unavailable", result.stdout)
-            self.assertIn("PASS  Python PyGObject Cairo foreign converter", available.stdout)
+            self.assertIn("BLOCKED  Python overlay Cairo converter", result.stdout)
+            self.assertIn("PASS  Python overlay verified", available.stdout)
             probes = source_log.read_text(encoding="utf-8")
             self.assertIn('gi.require_foreign("cairo")', probes)
             self.assertIn('repository.require("Gtk", "3.0", 0)', probes)
+            self.assertIn(f"PYTHONPATH={temp_path / 'isolated prefix' / 'overlay' / 'usr' / 'lib' / 'python3' / 'dist-packages'}", probes)
+            self.assertIn("PYTHONDONTWRITEBYTECODE=1", probes)
             self.assertNotIn("Gtk.init", probes)
             self.assertIn("D-Bus session not probed", result.stdout)
 
@@ -234,7 +250,7 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
             doctor = env_dir / "doctor.sh"
             doctor.write_text(
                 "#!/bin/sh\n"
-                "echo 'BLOCKED  Python PyGObject Cairo foreign converter unavailable'\n"
+                "echo 'BLOCKED  Python overlay Cairo converter unavailable'\n"
                 "exit 1\n",
                 encoding="utf-8",
             )
@@ -258,13 +274,14 @@ class LinuxEnvironmentIaCTest(unittest.TestCase):
 
             result = subprocess.run([str(env_dir / "run-fixture.sh")], env=env, text=True, capture_output=True, check=False)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("BLOCKED  Python PyGObject Cairo foreign converter unavailable", result.stdout)
+            self.assertIn("BLOCKED  Python overlay Cairo converter unavailable", result.stdout)
             self.assertFalse(launch_marker.exists(), "D-Bus and Xvfb launchers must not run after a failed doctor")
             self.assertFalse(evidence_dir.exists(), "runner must stop before creating fixture evidence when doctor fails")
 
     def test_runner_isolated_and_records_exact_source_hashes(self) -> None:
         source = (ENV / "run-fixture.sh").read_text(encoding="utf-8")
         self.assertIn("timeout --signal=TERM --kill-after=10s", source)
+        self.assertIn("PYTHONDONTWRITEBYTECODE=1", source)
         self.assertIn("dbus-run-session -- xvfb-run", source)
         self.assertIn("native/linux/integration.py", source)
         self.assertIn("XDG_SESSION_TYPE=x11", source)

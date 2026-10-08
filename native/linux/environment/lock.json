@@ -7,6 +7,11 @@
     "codename": "trixie",
     "architecture": "amd64"
   },
+  "pythonRuntime": {
+    "version": "3.13",
+    "soabi": "cpython-313-x86_64-linux-gnu",
+    "moduleDirectory": "usr/lib/python3/dist-packages"
+  },
   "provenance": {
     "repository": "https://deb.debian.org/debian/",
     "suite": "trixie",
@@ -70,12 +75,36 @@
       "filename": "pool/main/x/xcompmgr/xcompmgr_1.1.8-1_amd64.deb",
       "size": 27196,
       "sha256": "70e650e0e177cc06a6aa06ee5578754a6560e6a175cf82d6525fb3126428289d"
+    },
+    {
+      "name": "python3-gi",
+      "version": "3.50.0-4+b1",
+      "architecture": "amd64",
+      "filename": "pool/main/p/pygobject/python3-gi_3.50.0-4+b1_amd64.deb",
+      "size": 235504,
+      "sha256": "c1a63f7fd1ca15f5ae7483136a7ee736d97955133ec11796a744cedfa7b3aca5"
+    },
+    {
+      "name": "python3-cairo",
+      "version": "1.27.0-2",
+      "architecture": "amd64",
+      "filename": "pool/main/p/pycairo/python3-cairo_1.27.0-2_amd64.deb",
+      "size": 114228,
+      "sha256": "d6e5d25b82d2cd0de18cfe8ee0bc4d3f9d0e33ee27ec1d4347e391fc3e3bf996"
+    },
+    {
+      "name": "python3-gi-cairo",
+      "version": "3.50.0-4+b1",
+      "architecture": "amd64",
+      "filename": "pool/main/p/pygobject/python3-gi-cairo_3.50.0-4+b1_amd64.deb",
+      "size": 12868,
+      "sha256": "1edc99fc6c1d860994e6d54ec4861ed24dcf4518b73a7862087ac4da5e3388c1"
     }
   ],
   "hostPrerequisites": [
-    "Python 3.13 with PyGObject, Pycairo, the PyGObject Cairo foreign converter (python3-gi-cairo), and Gtk 3 / Atk typelibs",
-    "at-spi2-core and the GTK AT-SPI bridge (registry daemon and bridge module)",
-    "the host shared libraries used by Xvfb, xcompmgr, libatspi, and the X11 observer",
+    "System Python 3.13 (cpython-313-x86_64-linux-gnu) and Gtk 3 / Atk typelibs; matching PyGObject, Pycairo, and Cairo foreign-converter modules are supplied by the private overlay",
+    "at-spi2-core registry / bus launcher and the GTK 3 AT-SPI bridge shared library (libatk-bridge-2.0.so.0)",
+    "the host shared libraries used by Xvfb, xcompmgr, libatspi, PyGObject, Pycairo, and the X11 observer",
     "xkb-data at /usr/share/X11/xkb",
     "/usr/bin/xkbcomp (compiled-in helper path for this Debian Xvfb build)",
     "gpg, curl, xz, dpkg-deb, sha256sum, stat, flock, dbus-run-session, timeout, and standard GNU/Linux shell utilities"

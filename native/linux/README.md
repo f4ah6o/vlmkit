@@ -75,7 +75,7 @@ and does not probe D-Bus; the fixture runner explicitly starts its own D-Bus and
 Xvfb sessions and clears inherited Wayland/AT-SPI bus selectors before launch.
 
 Integration dependencies: an ABI-matched Python GI stack with Gtk 3 / Atk,
-Pycairo and the PyGObject Cairo foreign converter, `at-spi2-core`, `libatk-adaptor`,
+Pycairo and the PyGObject Cairo foreign converter, `at-spi2-core`, `libatk-bridge-2.0.so.0`,
 D-Bus, Xvfb, xcompmgr (started before the fixture), and the shared libraries above. The fixture uses only its own local
 windows and produces a tree, PNG, truncated tree, and machine-readable report.
 It verifies real stable IDs, duplicate-title surfaces, client-local semantic

@@ -17,7 +17,7 @@ Usage:
 Configuration:
   VLMKIT_LINUX_PREFIX          bootstrap prefix (same default as bootstrap.sh)
   VLMKIT_LINUX_EVIDENCE_DIR    output directory (default: test-results/native/linux)
-  VLMKIT_LINUX_PYTHON          Python 3.13 with Gtk 3 / Atk and the Cairo foreign converter (default: /usr/bin/python3)
+  VLMKIT_LINUX_PYTHON          system Python with the locked ABI (default: /usr/bin/python3)
   VLMKIT_LINUX_TIMEOUT_SECONDS bounded wall-clock timeout (default: 180)
 
 This command launches only the repository's own GTK fixture. It never attaches
@@ -102,6 +102,7 @@ export NO_AT_BRIDGE=0
 export GDK_BACKEND=x11
 export XDG_SESSION_TYPE=x11
 unset WAYLAND_DISPLAY WAYLAND_SOCKET AT_SPI_BUS_ADDRESS AT_SPI_DISPLAY DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE
+pythonpath="$VLMKIT_LINUX_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}"
 
 run_fixture() {
   local rc
@@ -110,7 +111,7 @@ run_fixture() {
   printf 'source_manifest=%s\n' "${manifest#"$VLMKIT_REPO_ROOT"/}"
   printf '%s\n' 'command=dbus-run-session -- xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" native/linux/with-compositor.sh <host-python> native/linux/integration.py'
   printf '%s\n' 'The isolated GTK fixture may take up to the configured timeout.'
-  timeout --signal=TERM --kill-after=10s "${timeout_seconds}s" \
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$pythonpath" timeout --signal=TERM --kill-after=10s "${timeout_seconds}s" \
     dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
     "$VLMKIT_LINUX_DIR/with-compositor.sh" "$python" "$VLMKIT_LINUX_DIR/integration.py" --out "$artifacts"
   rc=$?

@@ -27,6 +27,7 @@ case "$VLMKIT_LINUX_PREFIX" in
     ;;
 esac
 VLMKIT_LINUX_OVERLAY="$VLMKIT_LINUX_PREFIX/overlay"
+VLMKIT_LINUX_PYTHONPATH="$VLMKIT_LINUX_OVERLAY/usr/lib/python3/dist-packages"
 
 if [[ ! -f "$VLMKIT_LINUX_LOCK" ]]; then
   printf 'Missing package lock: %s\n' "$VLMKIT_LINUX_LOCK" >&2

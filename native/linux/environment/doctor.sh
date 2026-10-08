@@ -82,28 +82,87 @@ done
 
 python="${VLMKIT_LINUX_PYTHON:-/usr/bin/python3}"
 if [[ -x "$python" ]]; then
-  if "$python" - <<'PY' >/dev/null 2>&1
-import gi
-gi.require_foreign("cairo")
+  if python_overlay_diagnostic="$(
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="$VLMKIT_LINUX_PYTHONPATH${PYTHONPATH:+:$PYTHONPATH}" \
+      "$python" - "$VLMKIT_LINUX_OVERLAY" "$VLMKIT_LINUX_LOCK" 2>&1 <<'PY'
+import importlib
+import json
+import pathlib
+import subprocess
+import sys
+import sysconfig
+
+try:
+    overlay = pathlib.Path(sys.argv[1]).resolve()
+    lock = json.loads(pathlib.Path(sys.argv[2]).read_text(encoding="utf-8"))
+    runtime = lock["pythonRuntime"]
+    relative_module_dir = pathlib.Path(runtime["moduleDirectory"])
+    if relative_module_dir.is_absolute() or ".." in relative_module_dir.parts:
+        raise RuntimeError("unsafe Python module directory in lock")
+    module_dir = (overlay / relative_module_dir).resolve()
+    expected_version = tuple(map(int, runtime["version"].split(".")))
+    if sys.version_info[:2] != expected_version:
+        raise RuntimeError(f"Python {runtime['version']} required, found {sys.version_info.major}.{sys.version_info.minor}")
+    soabi = sysconfig.get_config_var("SOABI")
+    if soabi != runtime["soabi"]:
+        raise RuntimeError(f"SOABI {runtime['soabi']} required, found {soabi}")
+    extension_suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    if not extension_suffix:
+        raise RuntimeError("Python did not report an extension-module suffix")
+
+    package_versions = {package["name"]: package["version"] for package in lock["packages"]}
+    def upstream_version(name):
+        return package_versions[name].split("-", 1)[0]
+
+    expected_gi = upstream_version("python3-gi")
+    expected_gi_cairo = upstream_version("python3-gi-cairo")
+    expected_cairo = upstream_version("python3-cairo")
+    if expected_gi != expected_gi_cairo:
+        raise RuntimeError("python3-gi and python3-gi-cairo lock versions do not match")
+
+    import gi
+    import cairo
+
+    gi.require_foreign("cairo")
+    modules = {
+        "gi": gi,
+        "gi._gi": importlib.import_module("gi._gi"),
+        "gi._gi_cairo": importlib.import_module("gi._gi_cairo"),
+        "cairo": cairo,
+        "cairo._cairo": importlib.import_module("cairo._cairo"),
+    }
+    for name, module in modules.items():
+        path = pathlib.Path(module.__file__).resolve()
+        if not path.is_relative_to(module_dir):
+            raise RuntimeError(f"{name} loaded outside the private overlay: {path}")
+        if name in {"gi._gi", "gi._gi_cairo", "cairo._cairo"}:
+            if not path.name.endswith(extension_suffix):
+                raise RuntimeError(f"{name} does not match Python extension ABI {extension_suffix}: {path.name}")
+            linked = subprocess.run(["ldd", str(path)], text=True, capture_output=True, check=False)
+            if linked.returncode != 0 or "not found" in linked.stdout + linked.stderr:
+                detail = (linked.stdout + linked.stderr).strip().replace("\n", "; ")
+                raise RuntimeError(f"unresolved shared libraries for {name}: {detail}")
+
+    if gi.__version__ != expected_gi:
+        raise RuntimeError(f"PyGObject {expected_gi} required, found {gi.__version__}")
+    if cairo.version != expected_cairo:
+        raise RuntimeError(f"Pycairo {expected_cairo} required, found {cairo.version}")
+    repository = gi.Repository.get_default()
+    repository.require("Gtk", "3.0", 0)
+    repository.require("Atk", "1.0", 0)
+    print(f"CPython {runtime['version']} / {soabi}; PyGObject {gi.__version__}; Pycairo {cairo.version}; Cairo converter; Gtk 3 / Atk typelibs; overlay origins and shared libraries verified")
+except Exception as exc:
+    print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
 PY
-  then
-    pass "Python PyGObject Cairo foreign converter ($python)"
+  )"; then
+    pass "Python overlay verified ($python): $python_overlay_diagnostic"
   else
-    blocked "Python PyGObject Cairo foreign converter unavailable to $python; host must provide python3-gi-cairo and python3-cairo built for this Python ABI"
-  fi
-  if "$python" - <<'PY' >/dev/null 2>&1
-import gi
-repository = gi.Repository.get_default()
-repository.require("Gtk", "3.0", 0)
-repository.require("Atk", "1.0", 0)
-PY
-  then
-    pass "Python Gtk 3 / Atk typelibs ($python)"
-  else
-    blocked "Python Gtk 3 / Atk typelibs unavailable to $python; host must provide PyGObject, GTK 3 and Atk"
+    blocked "Python overlay Cairo converter, bindings, ABI or Gtk / Atk typelibs unavailable to $python: ${python_overlay_diagnostic//$'\n'/; }; bootstrap the locked overlay and provide host Python 3.13 with Gtk 3 / Atk typelibs"
   fi
 else
-  blocked "Host Python not found: $python (set VLMKIT_LINUX_PYTHON to a system Python with Gtk 3 / Atk)"
+  blocked "Host Python not found: $python (set VLMKIT_LINUX_PYTHON to a system Python with the locked ABI)"
 fi
 
 if command -v gpg >/dev/null 2>&1 && python3 "$VLMKIT_ENV_DIR/verify_provenance.py" "$VLMKIT_LINUX_LOCK"; then
@@ -134,7 +193,7 @@ if [[ -x /usr/bin/xkbcomp ]]; then pass 'host XKB helper (/usr/bin/xkbcomp)'; el
 
 ldconfig_output=''
 if command -v ldconfig >/dev/null 2>&1; then ldconfig_output="$(ldconfig -p 2>/dev/null || true)"; fi
-for library in libatspi.so.0 libatk-1.0.so.0 libgtk-3.so.0 libglib-2.0.so.0 libgobject-2.0.so.0 libX11.so.6 libXcomposite.so.1; do
+for library in libatspi.so.0 libatk-1.0.so.0 libatk-bridge-2.0.so.0 libgtk-3.so.0 libglib-2.0.so.0 libgobject-2.0.so.0 libgirepository-1.0.so.1 libffi.so.8 libcairo.so.2 libcairo-gobject.so.2 libX11.so.6 libXcomposite.so.1; do
   if [[ "$ldconfig_output" == *"$library"* ]]; then
     pass "host shared library $library"
   else
@@ -147,12 +206,6 @@ if [[ -n "$(find /usr/lib /usr/libexec -type f \( -name at-spi2-registryd -o -na
 else
   blocked 'host AT-SPI registry / bus launcher missing (provide at-spi2-core)'
 fi
-if [[ -n "$(find /usr/lib -type f -path '*/gtk-3.0/modules/libatk-bridge.so' -print -quit 2>/dev/null || true)" ]]; then
-  pass 'host GTK AT-SPI bridge module'
-else
-  blocked 'host GTK AT-SPI bridge module missing (provide libatk-adaptor)'
-fi
-
 ldd_failed=false
 for binary in \
   "$VLMKIT_LINUX_OVERLAY/usr/bin/Xvfb" \
