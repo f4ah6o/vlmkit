@@ -675,3 +675,5 @@ Save pixel/rect check verify this decision.
 Validation and limitations:
 [2026-10-03 native observer acceptance](../../docs/reports/2026-10-03-native-observer-p0.md).
 These parent designs remain open for the later native driver/GPUI phases.
+
+Re-checked against main @ 2ce237f (2026-10-09): the P0 vertical slice is on main; P2+ phases remain open (draft PR #2).

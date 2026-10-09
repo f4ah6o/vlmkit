@@ -55,3 +55,5 @@ authorization or silent browser fallback is introduced.
 - [ScreenCast portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html)
 - [RemoteDesktop portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.RemoteDesktop.html)
 - [libei](https://libinput.pages.freedesktop.org/libei/api/index.html)
+
+Re-checked against main @ 2ce237f (2026-10-09): the bounded X11 observer and fixture acceptance are on main; Wayland/XWayland/Windows rows remain unqualified and fixture-environment pinning is in flight on draft PR #7.
