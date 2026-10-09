@@ -4,6 +4,28 @@ Status: design / open
 Date: 2026-10-03  
 Scope: this fork only; no upstream contribution or upstream API compatibility requirement
 
+## OS child packets — 2026-10-07 (JST)
+
+This parent retains the common black-box/protocol, capability, locator, evidence,
+security and release contracts. OS implementation and runtime admission are
+tracked in:
+
+- [Apple Silicon macOS native driver](20261007-apple-silicon-macos-native-driver.md):
+  existing arm64 observer evidence; action/gate/flow candidate PR #2 is unmerged
+  and unqualified.
+- [Linux native observer and admission](20261005-linux-native-observer.md):
+  reuse the existing Linux packet and its bounded X11 PASS; broader profiles and
+  physical input remain separately gated.
+- [Windows native driver](20261007-windows-native-driver.md):
+  deferred under the existing priority/environment rule.
+
+macOS execution scope is Apple Silicon/arm64 only. Intel qualification is
+excluded; historical protocol/schema examples are retained, not new Intel tasks.
+The original Mac-first descriptions below remain design history. Use the
+[boundary audit](20261003-native-ui-boundary-audit.md) and actual implemented
+transport rather than treating a proposed abstraction as implemented.
+A child PASS never completes another OS or the common production gates.
+
 ## Goal
 
 Extend this VLMKit fork from browser-first verification to black-box verification of native desktop UI, starting with macOS and GPUI applications.

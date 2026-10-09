@@ -7,6 +7,11 @@ Linux native is a first-class target alongside macOS. Eventual application/tool 
 covers macOS, Linux and Windows. New Windows work is deferred until higher-priority
 macOS/Linux work is exhausted and a Windows work environment is supplied.
 
+Updated: 2026-10-07 (JST)  
+Parent: [Native UI black-box driver](20261003-native-ui-black-box-driver.md)  
+OS siblings: [Apple Silicon macOS](20261007-apple-silicon-macos-native-driver.md),
+[Windows](20261007-windows-native-driver.md)
+
 ## This bounded slice
 
 - Reuse the local NDJSON observer transport and `vlmkit-a11y/1` consumers.
@@ -25,7 +30,7 @@ Record implementation and actual acceptance separately for each profile:
 
 | Profile | Observer | Physical input |
 | --- | --- | --- |
-| macOS 14+ AX/ScreenCaptureKit | Existing fixture evidence; preserve regression tests | PR #2 remains separately gated |
+| Apple Silicon macOS 14+ AX/ScreenCaptureKit | Existing fixture evidence; preserve regression tests | PR #2 remains separately gated |
 | Linux composited X11 AT-SPI/XComposite, scale 1 | GTK/Xvfb/xcompmgr fixture PASS; [exact evidence](../../docs/reports/2026-10-05-linux-native-observer.md) | Unsupported |
 | X11 other WMs, toolkits, scale factors | Unqualified until corresponding runs | Unsupported |
 | Linux Wayland, named compositor/portal versions | Follow-up required | Unsupported |
@@ -47,6 +52,27 @@ RemoteDesktop/libei device permission alone does not prove selected-window deliv
 Keep input disabled until target-only delivery and negative sibling/occlusion tests
 pass on the claimed profile. No root/uinput, xhost+, security-setting bypass, persistent
 authorization or silent browser fallback is introduced.
+
+## Linux child-packet acceptance — 2026-10-07 (JST)
+
+This existing packet is the Linux child; its completed bounded X11 evidence above
+is retained, not reopened as a duplicate issue. Common protocol/gate/security
+policy stays in the parent. Remaining OS-specific admission requires:
+
+- [ ] Distinct visited-node/reference budgets before broader AT-SPI traversal.
+- [ ] Exact-profile GTK/Qt and real application semantics, multi-window,
+  resize/move, partial/absent AT-SPI, duplicate identities, exit, decorations,
+  scale and retained pixel/tree alignment evidence.
+- [ ] Wayland portal WINDOW/PipeWire identity and local geometry verified on a
+  named compositor/portal profile; XWayland has its own result.
+- [ ] No physical-input capability or flow PASS before verified target-only
+  delivery and negative sibling/occlusion checks. Existing observer-only
+  profiles continue to report input UNSUPPORTED.
+- [ ] Preserve current X11 and macOS/browser regressions; record exact final
+  source/tool/runtime identities and separate PASS/FAIL/UNRUN/BLOCKED/UNSUPPORTED.
+
+Do not borrow the unmerged Mac action implementation or synthesize missing
+GPUI/MZed semantics to close these gates.
 
 ## Sources
 
