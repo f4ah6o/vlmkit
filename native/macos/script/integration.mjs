@@ -10,6 +10,10 @@ import { runScanA11y } from "@mizchi/vlmkit-markup/a11y-tree/scan-a11y.ts";
 import { runCheckA11yTree } from "@mizchi/vlmkit-markup/a11y-tree/check-a11y-tree.ts";
 import { parseA11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 import { decodePng } from "@mizchi/vlmkit-core/png-utils.ts";
+import { runGroundingScan } from "@mizchi/vlmkit-markup/inspect/grounding-scan.ts";
+import { buildNativeInteractionMap } from "@mizchi/vlmkit-markup/native/native-surface.ts";
+import { runFlowVerify } from "@mizchi/vlmkit-markup/inspect/flow-verify.ts";
+import { runNativeSnapshotCli } from "../../../src/vrt/snapshot/native-snapshot.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const app = resolve(root, "native/macos/dist/VLMKitAXFixture.app");
 const agent = resolve(root, "native/macos/dist/VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent");
@@ -165,6 +169,83 @@ try {
       `<svg xmlns="http://www.w3.org/2000/svg" width="${frame.width}" height="${frame.height}"><image href="a11y.png" width="${frame.width}" height="${frame.height}"/><rect x="${save.rect.left * tree.scale}" y="${save.rect.top * tree.scale}" width="${save.rect.width * tree.scale}" height="${save.rect.height * tree.scale}" fill="none" stroke="red" stroke-width="2"/></svg>`,
     );
     const selected = await client.request("window.select", { sessionId });
+
+    // P2: screenshot pixels resolve to the semantic Save element, and the same point can be clicked physically.
+    const savePoint = {
+      xPx: Math.round((save.rect.left + save.rect.width / 2) * tree.scale),
+      yPx: Math.round((save.rect.top + save.rect.height / 2) * tree.scale),
+    };
+    const hit = await client.request("hitTest", {
+      sessionId,
+      windowId: selected.windowId,
+      point: savePoint,
+    });
+    assert.equal(hit.node.identifier, "fixture.save");
+    assert.equal(hit.locator.by, "stable-id");
+    assert.equal(hit.locator.value, "fixture.save");
+    assert.equal(hit.actionable, true);
+
+    const evidencePath = resolve(out, "actions.jsonl");
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: { kind: "click", mode: "physical", locator: { by: "point", ...savePoint } },
+    });
+    await delay();
+
+    // Semantic press and text setting share the same locator contract.
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: { kind: "press", mode: "semantic", locator: { by: "stable-id", value: "fixture.remember" } },
+    });
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      evidencePath,
+      action: {
+        kind: "typeText",
+        mode: "semantic",
+        locator: { by: "stable-id", value: "fixture.name" },
+        text: "Grace",
+      },
+    });
+    await delay();
+
+    // Ambiguous locators fail before input. The two Duplicate buttons are intentionally identical by role/name.
+    await assert.rejects(
+      client.request("perform", {
+        sessionId,
+        windowId: selected.windowId,
+        evidencePath,
+        action: { kind: "press", mode: "semantic", locator: { by: "role-name", role: "button", name: "Duplicate" } },
+      }),
+      /NATIVE_LOCATOR_AMBIGUOUS/,
+    );
+
+    const afterActions = await client.request("snapshot.capture", {
+      sessionId,
+      windowId: selected.windowId,
+      outputTreePath: resolve(out, "after-actions.json"),
+      outputPngPath: resolve(out, "after-actions.png"),
+    });
+    const actionTree = parseA11yTree(await readFile(afterActions.treePath, "utf8"));
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.status")?.name, "Saved 1");
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.remember")?.states.checked, false);
+    assert.equal(actionTree.nodes.find((n) => n.identifier === "fixture.name")?.value, "Grace");
+
+    const evidenceLines = (await readFile(evidencePath, "utf8")).trim().split("\n").map(JSON.parse);
+    assert.ok(evidenceLines.some((entry) => entry.mode === "physical" && entry.action.kind === "click"));
+    assert.ok(evidenceLines.some((entry) => entry.mode === "semantic" && entry.action.kind === "typeText"));
+    assert.doesNotMatch(await readFile(evidencePath, "utf8"), /Grace/);
+    assert.ok(evidenceLines.some((entry) => entry.action.kind === "typeText" && entry.action.textLength === 5));
+    results.push({
+      check: "P2 hit test, physical click, semantic press/text, ambiguous locator, redacted action evidence",
+      pass: true,
+    });
+
     const truncated = await client.request("snapshot.capture", {
       sessionId,
       windowId: selected.windowId,
@@ -221,6 +302,92 @@ try {
     assert.ok(exited);
     results.push({ check: "terminated target", pass: true });
   });
+  await fixture([], async ({ pid }) => {
+    const source = `macos:pid=${pid}`;
+    const grounding = await runGroundingScan({
+      source,
+      nativeAgent: agent,
+      markPath: resolve(out, "grounding-marked.png"),
+      at: [{ x: 80, y: 80 }],
+    });
+    assert.ok(grounding.targets.some((target) => target.label === "Save"));
+    assert.ok(grounding.probes?.length === 1);
+
+    const interactions = await buildNativeInteractionMap({
+      source,
+      nativeAgent: agent,
+      maxElements: 30,
+    });
+    assert.ok(interactions.elements.some((element) => element.name === "Save"));
+    assert.equal(interactions.capped, 0);
+
+    const snapshotDir = resolve(out, "snapshot");
+    const firstSnapshot = await runNativeSnapshotCli([
+      source,
+      "--native-agent",
+      agent,
+      "--output",
+      snapshotDir,
+      "--label",
+      "fixture",
+    ]);
+    assert.equal(firstSnapshot, 0);
+    const secondSnapshot = await runNativeSnapshotCli([
+      source,
+      "--native-agent",
+      agent,
+      "--output",
+      snapshotDir,
+      "--label",
+      "fixture",
+      "--fail-on-diff",
+    ]);
+    assert.equal(secondSnapshot, 0);
+
+    const flow = await runFlowVerify({
+      source,
+      nativeAgent: agent,
+      artifactDir: resolve(out, "flow"),
+      flow: {
+        steps: [
+          {
+            label: "save",
+            do: { action: "click", locator: { by: "stable-id", value: "fixture.save" } },
+            expect: [
+              {
+                assert: "text",
+                locator: { by: "stable-id", value: "fixture.status" },
+                contains: "Saved",
+              },
+            ],
+          },
+          {
+            label: "edit name",
+            do: {
+              action: "fill",
+              locator: { by: "stable-id", value: "fixture.name" },
+              value: "Lin",
+            },
+            expect: [
+              {
+                assert: "attr",
+                locator: { by: "stable-id", value: "fixture.name" },
+                name: "value",
+                equals: "Lin",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    assert.equal(flow.done, true);
+    assert.equal(flow.steps.length, 2);
+    assert.ok(flow.steps.every((step) => step.evidence?.screenshotPath && step.evidence?.treePath));
+    results.push({
+      check: "P3 grounding, interactions, VRT+a11y snapshot, portable native flow",
+      pass: true,
+    });
+  });
   await fixture(["--unchecked", "--duplicate-identifiers"], async ({ sessionId }) => {
     const window = await client.request("window.select", { sessionId });
     const capture = await client.request("snapshot.capture", {
@@ -233,6 +400,43 @@ try {
     assert.equal(tree.nodes.find((n) => n.identifier === "fixture.remember").states.checked, false);
     assert.ok(capture.diagnostics.some((d) => d.code === "NATIVE_DUPLICATE_IDENTIFIER"));
     results.push({ check: "unchecked value and duplicate identifier warning", pass: true });
+  });
+  await fixture([], async ({ sessionId }) => {
+    let selected = await client.request("window.select", { sessionId });
+    await client.request("perform", {
+      sessionId,
+      windowId: selected.windowId,
+      action: { kind: "press", mode: "semantic", locator: { by: "stable-id", value: "fixture.dialog" } },
+    });
+    await delay();
+    const dialogWindows = await client.request("window.list", { sessionId });
+    assert.ok(dialogWindows.some((window) => window.title === "Fixture dialog"));
+    selected = await client.request("window.select", { sessionId, selector: { by: "focused" } });
+    const dialogCapture = await client.request("snapshot.capture", {
+      sessionId,
+      windowId: selected.windowId,
+      outputTreePath: resolve(out, "dialog.json"),
+      outputPngPath: resolve(out, "dialog.png"),
+    });
+    const dialogTree = parseA11yTree(await readFile(dialogCapture.treePath, "utf8"));
+    assert.ok(dialogTree.nodes.some((node) => node.identifier === "fixture.dialog.close"));
+
+    const main = await client.request("window.select", { sessionId, selector: { by: "main" } }).catch(() => null);
+    const targetWindow =
+      main ?? (await client.request("window.select", { sessionId, selector: { by: "index", index: 0 } }));
+    const scroll = await client.request("perform", {
+      sessionId,
+      windowId: targetWindow.windowId,
+      action: {
+        kind: "scroll",
+        mode: "physical",
+        locator: { by: "stable-id", value: "fixture.scroll" },
+        deltaY: 160,
+      },
+    });
+    assert.equal(scroll.kind, "scroll");
+    assert.equal(scroll.target.identifier, "fixture.scroll");
+    results.push({ check: "dialog discovery/capture and scroll action", pass: true });
   });
   await fixture(["--ambiguous"], async ({ sessionId, windows }) => {
     assert.ok(windows.length >= 2);
