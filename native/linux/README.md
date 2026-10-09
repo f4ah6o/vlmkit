@@ -34,13 +34,19 @@ typelib is required.
   observer, **not** a security boundary against malicious X11 clients. Explicit
   foreign-PID embedded child windows are refused. No cross-client X11 security
   guarantees are asserted.
-- Traversal is cycle-safe, bounded to 10,000 emitted nodes / depth 128 maximum, 15 seconds
-  per AT-SPI request sequence and 1 second per remote AT-SPI call. Partial trees
-  report truncation/errors. Missing geometry is diagnostic, never invented.
-- The emitted-node cap is not a total visited/reference cap: geometry-less or
-  very wide accessibility trees may acquire additional child references before
-  the deadline. A separate visited/reference budget is required before broader
-  desktop admission; the current evidence covers the bounded fixture only.
+- Traversal is cycle-safe and lazy: it acquires one child reference at a time,
+  only after checking request-wide limits of 20,000 visited children and 50,000
+  AT-SPI object-reference attempts. The emitted-node cap is 10,000 and depth is
+  capped at 128. All request-owned object refs are released at the end of each
+  request; the selected window identity has its own dedicated retained ref. One
+  slot within the reference cap is reserved for final selected-window geometry
+  revalidation before pixel capture.
+  Requests also have a 15-second AT-SPI deadline and 1-second per-call timeout.
+  Partial trees report truncation and the specific budget diagnostic. Missing
+  geometry is diagnostic, never invented.
+- These budgets close the eager-reference gap for the collector and window
+  enumeration. They do not qualify additional desktop profiles; live GTK/Xvfb
+  acceptance and the broader X11/Wayland follow-ups remain separate.
 - Names, toolkit-exposed accessible IDs, roles, states and native action names
   are observed. Action names have an `atspi:` prefix; controls do not receive
   synthetic `tap` actions. Values and text contents are not collected in this
@@ -56,13 +62,20 @@ Capture returns `backend: "x11"`, `frameKind: "client-window"`, and
 
 ```sh
 python3 -m unittest discover -s native/linux -p 'test_*.py' -v
-# On a provisioned Linux desktop-test host:
-dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
-  native/linux/with-compositor.sh /usr/bin/python3 native/linux/integration.py \
-    --out test-results/native/linux
+# On a prepared Debian 13 (trixie), x86_64 test host:
+native/linux/environment/bootstrap.sh
+native/linux/environment/doctor.sh
+native/linux/environment/run-fixture.sh
 ```
 
-Integration dependencies: GTK3/Atk Python GI, `at-spi2-core`, `libatk-adaptor`,
+The environment scripts pin and verify the Xvfb/X11 overlay, document the
+host-managed GTK/AT-SPI prerequisites, and save timestamped fixture evidence.
+See [environment setup](environment/README.md). The default doctor is read-only
+and does not probe D-Bus; the fixture runner explicitly starts its own D-Bus and
+Xvfb sessions and clears inherited Wayland/AT-SPI bus selectors before launch.
+
+Integration dependencies: an ABI-matched Python GI stack with Gtk 3 / Atk,
+Pycairo and the PyGObject Cairo foreign converter, `at-spi2-core`, `libatk-bridge-2.0.so.0`,
 D-Bus, Xvfb, xcompmgr (started before the fixture), and the shared libraries above. The fixture uses only its own local
 windows and produces a tree, PNG, truncated tree, and machine-readable report.
 It verifies real stable IDs, duplicate-title surfaces, client-local semantic

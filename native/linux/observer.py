@@ -71,6 +71,14 @@ ROLES = {'push button': 'button', 'toggle button': 'button', 'entry': 'textfield
          'label': 'text', 'static': 'text', 'panel': 'group', 'list item': 'listitem',
          'scroll pane': 'scrollview', 'frame': 'window'}
 
+# These are request-local hard limits. `maxNodes` remains the public emitted-node
+# limit; a second visited limit also charges geometry-less and foreign nodes, and
+# the reference limit bounds AT-SPI objects retained while the request runs.
+MAX_AX_VISITED = 20000
+MAX_AX_REFERENCES = 50000
+MAX_AX_CHILDREN = 10000
+AX_REVALIDATION_REFERENCE_RESERVE = 1
+
 
 def associate(accessibles, windows):
     """Only unique same-PID exact SCREEN extents are admitted; titles are ignored."""
@@ -133,6 +141,33 @@ class Atspi:
             fail('NATIVE_ACCESSIBILITY_UNAVAILABLE', 'AT-SPI initialization failed')
         bind(self.lib, 'atspi_set_timeout', None, I, I)(1000, 1000)
         self.deadline = time.monotonic() + 15
+        self.visited_used = 0
+        self.visited_limit = MAX_AX_VISITED
+        self.references_used = 0
+        self.references_limit = MAX_AX_REFERENCES
+
+    def begin_request(self):
+        # The selected-window identity is separately held by Agent with a
+        # dedicated g_object_ref. Everything in `refs` belongs to one request.
+        self.release()
+        self.deadline = time.monotonic() + 15
+
+    def reserve_reference(self, critical=False):
+        # Keep one slot inside the same hard request cap for the mandatory
+        # selected-window geometry revalidation before pixels are captured.
+        limit = self.references_limit if critical else max(
+            0, self.references_limit - AX_REVALIDATION_REFERENCE_RESERVE)
+        if self.references_used >= limit:
+            fail('NATIVE_AX_REFERENCE_LIMIT', 'AT-SPI request reference budget exhausted')
+        # Reserve before calling AT-SPI: failed/null returns still cost a remote
+        # lookup and must not let an adversarial tree evade the request budget.
+        self.references_used += 1
+
+    def reserve_visit(self):
+        if self.visited_used >= self.visited_limit:
+            fail('NATIVE_AX_VISIT_LIMIT', 'AT-SPI request visited-node budget exhausted')
+        # Reserve before asking the remote tree for a child object.
+        self.visited_used += 1
 
     def call(self, name, obj=None, args=(), types=(), result=P, error=True):
         if time.monotonic() > self.deadline:
@@ -150,7 +185,8 @@ class Atspi:
             fail('NATIVE_AX_CANNOT_COMPLETE', message)
         return out
 
-    def obj(self, name, obj=None, args=(), types=(), error=True):
+    def obj(self, name, obj=None, args=(), types=(), error=True, critical=False):
+        self.reserve_reference(critical=critical)
         value = self.call(name, obj, args, types, error=error)
         if value:
             self.refs.append(value)
@@ -165,17 +201,27 @@ class Atspi:
         finally:
             self.free(ptr)
 
-    def children(self, obj):
+    def child_count(self, obj):
         count = self.call('accessible_get_child_count', obj, result=I)
-        if not 0 <= count <= 10000:
+        if not 0 <= count <= 2147483647:
             fail('NATIVE_AX_TRUNCATED', 'Child count exceeds traversal limit')
+        return count
+
+    def child_at(self, obj, index):
+        self.reserve_visit()
+        return self.obj('accessible_get_child_at_index', obj, (index,), (I,))
+
+    def children(self, obj):
+        count = self.child_count(obj)
+        if count > MAX_AX_CHILDREN:
+            fail('NATIVE_AX_TRUNCATED', 'Child count exceeds per-parent traversal limit')
         for index in range(count):
-            child = self.obj('accessible_get_child_at_index', obj, (index,), (I,))
+            child = self.child_at(obj, index)
             if child:
                 yield index, child
 
-    def bounds(self, obj):
-        component = self.obj('accessible_get_component_iface', obj, error=False)
+    def bounds(self, obj, critical=False):
+        component = self.obj('accessible_get_component_iface', obj, error=False, critical=critical)
         if not component:
             return None
         ptr = self.call('component_get_extents', component, (0,), (I,))  # ATSPI_COORD_TYPE_SCREEN
@@ -213,22 +259,42 @@ class Atspi:
             fail('NATIVE_ACCESSIBILITY_UNAVAILABLE', 'AT-SPI desktop unavailable')
         found = []
         for _, app in self.children(desktop):
-            if self.pid(app) != pid:
-                continue
-            for index, child in self.children(app):
-                if self.pid(child) != pid:
+            try:
+                if self.pid(app) != pid:
                     continue
-                role = self.text('accessible_get_role_name', child)
-                bounds = self.bounds(child)
-                if role in ('frame', 'window', 'dialog', 'alert') and bounds and bounds['width'] > 0 and bounds['height'] > 0:
-                    found.append(dict(obj=child, pid=pid, rect=bounds, index=index,
-                                      title=self.text('accessible_get_name', child), states=self.states(child)))
+                for index, child in self.children(app):
+                    keep = False
+                    try:
+                        if self.pid(child) != pid:
+                            continue
+                        role = self.text('accessible_get_role_name', child)
+                        bounds = self.bounds(child)
+                        if role in ('frame', 'window', 'dialog', 'alert') and bounds and bounds['width'] > 0 and bounds['height'] > 0:
+                            found.append(dict(obj=child, pid=pid, rect=bounds, index=index,
+                                              title=self.text('accessible_get_name', child), states=self.states(child)))
+                            keep = True
+                    finally:
+                        if not keep:
+                            self.release_obj(child)
+            finally:
+                self.release_obj(app)
         return found
+
+    def release_obj(self, obj):
+        # Drop short-lived enumeration references promptly. `references_used`
+        # stays cumulative for the request, so release cannot reopen the budget.
+        for index in range(len(self.refs) - 1, -1, -1):
+            if self.refs[index] == obj:
+                del self.refs[index]
+                self.unref(obj)
+                return
 
     def release(self):
         for obj in reversed(self.refs):
             self.unref(obj)
         self.refs.clear()
+        self.visited_used = 0
+        self.references_used = 0
 
 
 class XAttributes(C.Structure):
@@ -444,80 +510,171 @@ class X11:
                 bind(self.lib, 'XDestroyImage', I, P)(image)
 
 
-def collect(a, root, pid, origin, max_depth=64, max_nodes=10000):
+def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
+            max_visited=MAX_AX_VISITED):
+    """Collect in depth-first order without first acquiring a parent's children.
+
+    A frame holds a single current object plus its next child index. It asks the
+    remote tree for one child only after node, depth and visit limits have been
+    checked, so a wide parent cannot materialize a large list of AT-SPI proxies.
+    """
+    max_visited = min(max_visited, MAX_AX_VISITED)
     nodes, diagnostics, seen, ids = [], [], set(), set()
-    truncated, errors = 0, 0
-    stack = [(root, 0, 0, '')]
+    truncated, errors, visited = 0, 0, 1  # root is already retained by caller
+    stack = [dict(obj=root, depth=0, ordinal=0, parent='', entered=False,
+                  child_count=None, next_index=0, path='')]
+
+    def remaining_children():
+        return sum(max(0, frame['child_count'] - frame['next_index'])
+                   for frame in stack if frame['child_count'] is not None)
+
+    def hard_budget_failure(error):
+        nonlocal truncated
+        if error.code not in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT'):
+            return False
+        remaining = remaining_children()
+        if stack and stack[-1]['child_count'] is None:
+            remaining += 1  # current subtree could not be enumerated
+        truncated += max(1, remaining)
+        diagnostics.append(dict(code=error.code))
+        return True
+
+    def optional_error(error):
+        nonlocal errors
+        if error.code in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT'):
+            raise error
+        errors += 1
+
     while stack:
-        obj, depth, ordinal, parent = stack.pop()
-        if len(nodes) >= max_nodes or depth > max_depth:
-            truncated += 1
-            continue
-        if obj in seen:
-            diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
-            truncated += 1
-            continue
-        seen.add(obj)
-        try:
-            if a.pid(obj) != pid:
-                diagnostics.append(dict(code='NATIVE_AX_FOREIGN_SUBTREE'))
+        frame = stack[-1]
+        obj, depth = frame['obj'], frame['depth']
+
+        if not frame['entered']:
+            frame['entered'] = True
+            if obj in seen:
+                diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
                 truncated += 1
+                if hasattr(a, 'release_obj'):
+                    a.release_obj(obj)
+                stack.pop()
                 continue
-            platform_role = a.text('accessible_get_role_name', obj)
-            role = ROLES.get(platform_role, platform_role) or 'unknown'
-            # role is data, never structural path syntax.
-            segment = re.sub(r'[^A-Za-z0-9_-]', '_', role) + f'[{ordinal}]'
-            path = parent + '>' + segment if parent else segment
-            bounds = a.bounds(obj)
-            if bounds is None or bounds['width'] < 0 or bounds['height'] < 0:
-                diagnostics.append(dict(code='NATIVE_AX_MISSING_GEOMETRY', path=path))
-                errors += 1
-                # Preserve descendants without inventing a rectangle for this node.
-            else:
-                node = dict(path=path, role=role, platformRole=platform_role,
-                            rect=rect(bounds['left'] - origin['left'], bounds['top'] - origin['top'], bounds['width'], bounds['height']))
-                for field, method in [('name', 'accessible_get_name'), ('identifier', 'accessible_get_accessible_id')]:
+            seen.add(obj)
+            try:
+                if a.pid(obj) != pid:
+                    diagnostics.append(dict(code='NATIVE_AX_FOREIGN_SUBTREE'))
+                    truncated += 1
+                    stack.pop()
+                    continue
+                platform_role = a.text('accessible_get_role_name', obj)
+                role = ROLES.get(platform_role, platform_role) or 'unknown'
+                # role is data, never structural path syntax.
+                segment = re.sub(r'[^A-Za-z0-9_-]', '_', role) + f'[{frame["ordinal"]}]'
+                path = frame['parent'] + '>' + segment if frame['parent'] else segment
+                frame['path'] = path
+                bounds = a.bounds(obj)
+                if bounds is None or bounds['width'] < 0 or bounds['height'] < 0:
+                    diagnostics.append(dict(code='NATIVE_AX_MISSING_GEOMETRY', path=path))
+                    errors += 1
+                    # Preserve descendants without inventing a rectangle.
+                else:
+                    node = dict(path=path, role=role, platformRole=platform_role,
+                                rect=rect(bounds['left'] - origin['left'], bounds['top'] - origin['top'], bounds['width'], bounds['height']))
+                    for field, method in [('name', 'accessible_get_name'), ('identifier', 'accessible_get_accessible_id')]:
+                        try:
+                            value = a.text(method, obj)
+                            if value:
+                                node[field] = value
+                                if field == 'identifier':
+                                    if value in ids:
+                                        diagnostics.append(dict(code='NATIVE_AX_DUPLICATE_IDENTIFIER', identifier=value))
+                                    ids.add(value)
+                        except (Failure, AttributeError) as error:
+                            if isinstance(error, Failure):
+                                optional_error(error)
+                            else:
+                                errors += 1
                     try:
-                        value = a.text(method, obj)
-                        if value:
-                            node[field] = value
-                            if field == 'identifier':
-                                if value in ids:
-                                    diagnostics.append(dict(code='NATIVE_AX_DUPLICATE_IDENTIFIER', identifier=value))
-                                ids.add(value)
-                    except (Failure, AttributeError):
-                        errors += 1
-                try:
-                    node['states'] = a.states(obj)
-                except Failure:
-                    errors += 1
-                # Report native action names only, never synthesize tap from role.
-                try:
-                    action = a.obj('accessible_get_action_iface', obj, error=False)
-                    if action:
-                        n = a.call('action_get_n_actions', action, result=I)
-                        if not 0 <= n <= 128:
-                            raise Failure('NATIVE_AX_TRUNCATED', 'Action count exceeds bound')
-                        actions = []
-                        for index in range(n):
-                            ptr = a.call('action_get_action_name', action, (index,), (I,))
-                            if ptr:
-                                actions.append('atspi:' + C.string_at(ptr).decode('utf-8', 'replace'))
-                                a.free(ptr)
-                        if actions:
-                            node['actions'] = actions
-                except Failure:
-                    errors += 1
-                nodes.append(node)
-            children = list(a.children(obj))
-            stack.extend((child, depth + 1, index, path) for index, child in reversed(children))
-        except Failure as error:
-            if error.code == 'NATIVE_AX_TIMEOUT':
-                truncated += len(stack) + 1
+                        node['states'] = a.states(obj)
+                    except Failure as error:
+                        optional_error(error)
+                    # Report native action names only, never synthesize tap from role.
+                    try:
+                        action = a.obj('accessible_get_action_iface', obj, error=False)
+                        if action:
+                            n = a.call('action_get_n_actions', action, result=I)
+                            if not 0 <= n <= 128:
+                                raise Failure('NATIVE_AX_TRUNCATED', 'Action count exceeds bound')
+                            actions = []
+                            for index in range(n):
+                                ptr = a.call('action_get_action_name', action, (index,), (I,))
+                                if ptr:
+                                    actions.append('atspi:' + C.string_at(ptr).decode('utf-8', 'replace'))
+                                    a.free(ptr)
+                            if actions:
+                                node['actions'] = actions
+                    except Failure as error:
+                        optional_error(error)
+                    nodes.append(node)
+
+                frame['child_count'] = a.child_count(obj)
+                if frame['child_count'] > MAX_AX_CHILDREN:
+                    diagnostics.append(dict(code='NATIVE_AX_TRUNCATED'))
+                    truncated += frame['child_count']
+                    frame['next_index'] = frame['child_count']
+                elif depth >= max_depth and frame['child_count']:
+                    diagnostics.append(dict(code='NATIVE_AX_DEPTH_LIMIT'))
+                    truncated += frame['child_count']
+                    frame['next_index'] = frame['child_count']
+            except Failure as error:
+                if hard_budget_failure(error):
+                    break
+                errors += 1
                 diagnostics.append(dict(code=error.code))
+                stack.pop()
+                continue
+            continue
+
+        if frame['child_count'] is None or frame['next_index'] >= frame['child_count']:
+            stack.pop()
+            continue
+        if len(nodes) >= max_nodes:
+            remaining = frame['child_count'] - frame['next_index']
+            if remaining:
+                diagnostics.append(dict(code='NATIVE_AX_NODE_LIMIT'))
+                truncated += remaining
+            frame['next_index'] = frame['child_count']
+            continue
+        if visited >= max_visited:
+            remaining = frame['child_count'] - frame['next_index']
+            if remaining:
+                diagnostics.append(dict(code='NATIVE_AX_VISIT_LIMIT'))
+                truncated += remaining
+            frame['next_index'] = frame['child_count']
+            continue
+
+        index = frame['next_index']
+        # Charge the visit budget before making the remote reference call.
+        visited += 1
+        try:
+            child = a.child_at(obj, index)
+        except Failure as error:
+            if hard_budget_failure(error):
                 break
             errors += 1
             diagnostics.append(dict(code=error.code))
+            frame['next_index'] = index + 1
+            continue
+        frame['next_index'] = index + 1
+        if child:
+            if child in seen:
+                diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
+                truncated += 1
+                if hasattr(a, 'release_obj'):
+                    a.release_obj(child)
+                continue
+            stack.append(dict(obj=child, depth=depth + 1, ordinal=index, parent=frame['path'],
+                              entered=False, child_count=None, next_index=0, path=''))
+
     return nodes, dict(nodes=len(nodes), truncated=truncated, attributeErrors=errors), diagnostics
 
 
@@ -598,6 +755,15 @@ class Agent:
         return {k: v for k, v in w.items() if k not in ('obj', 'states', 'rect', 'index', 'xid', 'pid')}
 
     def dispatch(self, method, params):
+        if self.a:
+            self.a.begin_request()
+        try:
+            return self._dispatch(method, params)
+        finally:
+            if self.a:
+                self.a.release()
+
+    def _dispatch(self, method, params):
         if method == 'hello':
             return dict(protocol=1, agentVersion='0.1.0', platform='linux', backend='x11',
                         capabilities=dict(accessibility=True, screenCapture=True, singleFrameCapture=True,
@@ -651,9 +817,13 @@ class Agent:
             fail('NATIVE_INVALID_PARAMS', 'Distinct absolute tree and PNG output paths are required')
         nodes, counts, diagnostics = collect(self.a, w['obj'], s['pid'], w['rect'], max_depth, max_nodes)
         if not nodes:
+            for diagnostic in diagnostics:
+                if diagnostic['code'] in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT',
+                                           'NATIVE_AX_VISIT_LIMIT', 'NATIVE_AX_TRUNCATED'):
+                    fail(diagnostic['code'], 'No trustworthy accessible nodes before the traversal budget was reached')
             fail('NATIVE_AX_CANNOT_COMPLETE', 'No accessible nodes with trustworthy geometry')
         # Revalidate accessibility identity/geometry after traversal, before pixels.
-        if self.a.pid(w['obj']) != s['pid'] or self.a.bounds(w['obj']) != w['rect']:
+        if self.a.pid(w['obj']) != s['pid'] or self.a.bounds(w['obj'], critical=True) != w['rect']:
             fail('NATIVE_WINDOW_CHANGED', 'AT-SPI selected window changed during traversal')
         self.session(params)
         png = self.x.capture(w['xid'], s['pid'], w['rect'], s['compositor'])
