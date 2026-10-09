@@ -148,6 +148,20 @@ describe("Linux observer admission", () => {
       /NATIVE_PERMISSION_SCREEN_CAPTURE/,
     );
   });
+  it.skipIf(process.platform !== "linux")(
+    "does not dispatch a macOS source into the Linux observer branch",
+    async () => {
+      await assert.rejects(
+        captureNativeA11y({
+          source: "macos:pid=123",
+          out: "/tmp/unused-native-tree.json",
+          frame: "/tmp/unused-native-frame.png",
+          agent: "/does-not-exist/native-agent",
+        }),
+        /Native macOS scan requires a macOS host/,
+      );
+    },
+  );
   it.skipIf(process.platform !== "linux")("accepts aligned synthetic artifacts with selected identity", async () => {
     const { file, treePath, pngPath } = capturedAgent();
     const result = await captureNativeA11y({ source: "linux:pid=123", out: treePath, frame: pngPath, agent: file });

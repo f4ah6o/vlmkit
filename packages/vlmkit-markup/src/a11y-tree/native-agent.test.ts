@@ -6,7 +6,13 @@ import { describe, it } from "vite-plus/test";
 import { decodePng } from "@mizchi/vlmkit-core/png-utils.ts";
 import { isInteractive, parseA11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 import { runCheckA11yTree } from "./check-a11y-tree.ts";
-import { macTarget, macWindow, NativeAgentClient } from "./native-agent.ts";
+import {
+  macTarget,
+  macWindow,
+  NativeAgentClient,
+  openNativeInteractionSession,
+  runNativeDoctor,
+} from "./native-agent.ts";
 import { a11yScanGate } from "../gates/a11y-tree.gate.ts";
 const root = resolve(import.meta.dirname!, "../../../..");
 const fixture = (name: string, file: string) => join(root, "fixtures/native/macos", name, file);
@@ -152,5 +158,15 @@ describe("native NDJSON transport", () => {
         client.close();
       }
     }
+  });
+});
+
+describe("macOS-only native operations", () => {
+  it.skipIf(process.platform === "darwin")("keeps doctor and interaction sessions unavailable off macOS", async () => {
+    await assert.rejects(runNativeDoctor({ agent: "/does-not-exist/native-agent" }), /requires a macOS host/);
+    await assert.rejects(
+      openNativeInteractionSession({ source: "macos:pid=123", agent: "/does-not-exist/native-agent" }),
+      /Native macOS interaction requires a macOS host/,
+    );
   });
 });
