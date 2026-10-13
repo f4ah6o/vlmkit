@@ -417,21 +417,8 @@ fn dispatch(args : Array[String]) -> String raise {
       let rows = @core.landscape_default_grid_rows(w, h)
       "\{cols}|\{rows}"
     }
-    [
-      "landscape-cell-score",
-      r1,
-      g1,
-      b1,
-      l1,
-      i1,
-      r2,
-      g2,
-      b2,
-      l2,
-      i2,
-    ] =>
-      @core
-      .landscape_cell_score(
+    ["landscape-cell-score", r1, g1, b1, l1, i1, r2, g2, b2, l2, i2] =>
+      @core.landscape_cell_score(
         parse_double(r1),
         parse_double(g1),
         parse_double(b1),
@@ -442,8 +429,7 @@ fn dispatch(args : Array[String]) -> String raise {
         parse_double(b2),
         parse_double(l2),
         parse_double(i2),
-      )
-      .to_string()
+      ).to_string()
     ["landscape-cell-hex", r, g, b] =>
       @core.landscape_cell_hex(
         parse_double(r),
@@ -467,8 +453,7 @@ fn dispatch(args : Array[String]) -> String raise {
         baseline_stats,
         current_stats,
       )
-    ["grid-gcd", a, b] =>
-      @core.grid_gcd(parse_int(a), parse_int(b)).to_string()
+    ["grid-gcd", a, b] => @core.grid_gcd(parse_int(a), parse_int(b)).to_string()
     ["grid-all-equal", widths, tolerance] =>
       bool_to_string(@core.grid_all_equal(widths, parse_double(tolerance)))
     ["grid-arrays-close", a, b, tolerance] =>
@@ -539,17 +524,7 @@ fn dispatch(args : Array[String]) -> String raise {
         parse_int(color_count),
         parse_int(stripe_rows),
       )
-    [
-      "a11y-contrast-evaluate",
-      fr,
-      fg,
-      fb,
-      br,
-      bg,
-      bb,
-      font_size,
-      font_weight,
-    ] =>
+    ["a11y-contrast-evaluate", fr, fg, fb, br, bg, bb, font_size, font_weight] =>
       @core.a11y_contrast_evaluate(
         parse_int(fr),
         parse_int(fg),
@@ -620,8 +595,8 @@ fn parse_double(value : String) -> Double raise {
 }
 
 ///|
-fn parse_int(value : String) -> Int raise {
-  let parsed : Int = @string.from_str(value)
+fn parse_int(value : String) -> Int32 raise {
+  let parsed : Int32 = @string.from_str(value)
   parsed
 }
 
@@ -664,8 +639,8 @@ fn parse_double_list(value : String) -> Array[Double] raise {
 }
 
 ///|
-fn parse_int_list(value : String) -> Array[Int] raise {
-  let values : Array[Int] = []
+fn parse_int_list(value : String) -> Array[Int32] raise {
+  let values : Array[Int32] = []
   for part in parse_string_list(value) {
     values.push(parse_int(part))
   }

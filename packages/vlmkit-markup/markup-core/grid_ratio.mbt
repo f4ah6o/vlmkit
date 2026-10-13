@@ -5,14 +5,14 @@
 //! markup-core FFI surface keeps working.
 
 ///|
-pub fn grid_gcd(a : Int, b : Int) -> Int {
+pub fn grid_gcd(a : Int32, b : Int32) -> Int32 {
   let aa = if a < 0 { -a } else { a }
   let bb = if b < 0 { -b } else { b }
   grid_gcd_loop(aa, bb)
 }
 
 ///|
-fn grid_gcd_loop(a : Int, b : Int) -> Int {
+fn grid_gcd_loop(a : Int32, b : Int32) -> Int32 {
   if b == 0 {
     a
   } else {
@@ -92,7 +92,7 @@ pub fn grid_ratios_to_decimal(widths_csv : String) -> String raise {
 /// `[1, max_denom]` keeps the per-child relative error below 1%.
 pub fn grid_approximate_integer_fr(
   widths_csv : String,
-  max_denom : Int,
+  max_denom : Int32,
 ) -> String raise {
   let widths = parse_double_csv(widths_csv)
   if widths.length() == 0 {
@@ -111,11 +111,11 @@ pub fn grid_approximate_integer_fr(
   for w in widths {
     ratios.push(w / min)
   }
-  let mut best_denoms : Array[Int] = []
+  let mut best_denoms : Array[Int32] = []
   let mut best_err : Double = 0.0
   let mut found = false
-  for d in 1..=max_denom {
-    let ints : Array[Int] = []
+  for d in 1..<=max_denom {
+    let ints : Array[Int32] = []
     let mut has_zero = false
     for r in ratios {
       let n = (r * d.to_double()).round().to_int()
@@ -141,7 +141,7 @@ pub fn grid_approximate_integer_fr(
       for n in ints {
         g = grid_gcd(g, n)
       }
-      let reduced : Array[Int] = []
+      let reduced : Array[Int32] = []
       for n in ints {
         reduced.push(n / g)
       }
@@ -157,7 +157,7 @@ pub fn grid_approximate_integer_fr(
 }
 
 ///|
-fn format_fr_list(values : Array[Int]) -> String {
+fn format_fr_list(values : Array[Int32]) -> String {
   let parts : Array[String] = []
   for v in values {
     parts.push("\{v}fr")

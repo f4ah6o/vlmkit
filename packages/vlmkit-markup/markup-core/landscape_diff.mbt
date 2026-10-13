@@ -8,15 +8,17 @@
 //! back a pipe-separated summary.
 
 ///|
-pub fn landscape_default_grid_cols(width : Int, height : Int) -> Int {
+pub fn landscape_default_grid_cols(width : Int32, height : Int32) -> Int32 {
   if width <= 0 || height <= 0 {
     return 0
   }
-  let long_side : Int = 16
+  let long_side : Int32 = 16
   if width >= height {
     long_side
   } else {
-    let scaled = (long_side.to_double() * width.to_double() / height.to_double()).round().to_int()
+    let scaled = (long_side.to_double() * width.to_double() / height.to_double())
+      .round()
+      .to_int()
     if scaled > 8 {
       scaled
     } else {
@@ -26,15 +28,17 @@ pub fn landscape_default_grid_cols(width : Int, height : Int) -> Int {
 }
 
 ///|
-pub fn landscape_default_grid_rows(width : Int, height : Int) -> Int {
+pub fn landscape_default_grid_rows(width : Int32, height : Int32) -> Int32 {
   if width <= 0 || height <= 0 {
     return 0
   }
-  let long_side : Int = 16
+  let long_side : Int32 = 16
   if width < height {
     long_side
   } else {
-    let scaled = (long_side.to_double() * height.to_double() / width.to_double()).round().to_int()
+    let scaled = (long_side.to_double() * height.to_double() / width.to_double())
+      .round()
+      .to_int()
     if scaled > 8 {
       scaled
     } else {
@@ -44,7 +48,7 @@ pub fn landscape_default_grid_rows(width : Int, height : Int) -> Int {
 }
 
 ///|
-pub fn landscape_clamp_byte(value : Double) -> Int {
+pub fn landscape_clamp_byte(value : Double) -> Int32 {
   let rounded = value.round().to_int()
   if rounded < 0 {
     0
@@ -124,17 +128,17 @@ fn parse_cell_stats(value : String) -> Array[LandscapeCellStat] raise {
       }
       idx = idx + 1
     }
-    cells.push({ r, g, b, l, ink })
+    cells.push({ r, g, b, l, ink, })
   }
   cells
 }
 
 ///|
-fn collect_top_indices(scores : Array[Double], top_n : Int) -> Array[Int] {
+fn collect_top_indices(scores : Array[Double], top_n : Int32) -> Array[Int32] {
   let total = scores.length()
   let limit = if top_n < total { top_n } else { total }
   let picked : Array[Bool] = Array::make(total, false)
-  let result : Array[Int] = []
+  let result : Array[Int32] = []
   for _ in 0..<limit {
     let mut best_idx = -1
     let mut best_score = -1.0
@@ -171,10 +175,10 @@ fn collect_top_indices(scores : Array[Double], top_n : Int) -> Array[Int] {
 /// `changed_cells` counts cells whose individual score >= changed_threshold,
 /// and the trailing pairs are the top-N cells in descending score order.
 pub fn landscape_diff_summary(
-  cols : Int,
-  rows : Int,
+  cols : Int32,
+  rows : Int32,
   changed_threshold : Double,
-  top_n : Int,
+  top_n : Int32,
   baseline_stats : String,
   current_stats : String,
 ) -> String raise {
@@ -192,7 +196,7 @@ pub fn landscape_diff_summary(
   }
   let scores : Array[Double] = []
   let mut sum : Double = 0.0
-  let mut changed : Int = 0
+  let mut changed : Int32 = 0
   for idx in 0..<total {
     let b = base[idx]
     let c = curr[idx]
@@ -238,14 +242,14 @@ pub fn landscape_cell_hex(r : Double, g : Double, b : Double) -> String {
 }
 
 ///|
-fn hex_pair(value : Int) -> String {
+fn hex_pair(value : Int32) -> String {
   let high = (value / 16) & 0xF
   let low = value & 0xF
   "\{hex_digit(high)}\{hex_digit(low)}"
 }
 
 ///|
-fn hex_digit(value : Int) -> String {
+fn hex_digit(value : Int32) -> String {
   if value <= 9 {
     value.to_string()
   } else if value == 10 {

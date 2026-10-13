@@ -20,9 +20,9 @@
 /// An 8-bit colour. Shared by every handler here that takes one, so a swap between
 /// two colours needs the caller to name the wrong field rather than count wrong.
 pub struct Rgb {
-  r : Int
-  g : Int
-  b : Int
+  r : Int32
+  g : Int32
+  b : Int32
 } derive(FromJson, ToJson)
 
 ///|
@@ -38,7 +38,7 @@ pub struct ContrastEvaluateInput {
   foreground : Rgb
   background : Rgb
   font_size : Double
-  font_weight : Int
+  font_weight : Int32
 } derive(FromJson, ToJson)
 
 ///|
@@ -54,7 +54,9 @@ pub struct ContrastEvaluateOutput {
 } derive(ToJson)
 
 ///|
-pub fn contrast_evaluate(input : ContrastEvaluateInput) -> ContrastEvaluateOutput raise {
+pub fn contrast_evaluate(
+  input : ContrastEvaluateInput,
+) -> ContrastEvaluateOutput raise {
   let joined = a11y_contrast_evaluate(
     input.foreground.r,
     input.foreground.g,
@@ -67,9 +69,15 @@ pub fn contrast_evaluate(input : ContrastEvaluateInput) -> ContrastEvaluateOutpu
   )
   let parts = split_issue_ids(joined)
   if parts.length() != 3 {
-    raise Failure("a11y_contrast_evaluate returned \{parts.length()} fields: \{joined}")
+    raise Failure(
+      "a11y_contrast_evaluate returned \{parts.length()} fields: \{joined}",
+    )
   }
-  { ratio: parse_double_field(parts[0]), required_aa: parse_double_field(parts[1]), level: parts[2] }
+  {
+    ratio: parse_double_field(parts[0]),
+    required_aa: parse_double_field(parts[1]),
+    level: parts[2],
+  }
 }
 
 ///|
@@ -137,12 +145,12 @@ pub fn grid_arrays_close_json(input : GridArraysCloseInput) -> Bool {
 
 ///|
 pub struct GridGcdInput {
-  a : Int
-  b : Int
+  a : Int32
+  b : Int32
 } derive(FromJson, ToJson)
 
 ///|
-pub fn grid_gcd_json(input : GridGcdInput) -> Int {
+pub fn grid_gcd_json(input : GridGcdInput) -> Int32 {
   grid_gcd(input.a, input.b)
 }
 
@@ -170,8 +178,8 @@ pub fn error_state_kind(input : ErrorStateInput) -> String {
 
 ///|
 pub struct CoverageInput {
-  covered : Int
-  total : Int
+  covered : Int32
+  total : Int32
 } derive(FromJson, ToJson)
 
 ///|

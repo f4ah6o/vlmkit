@@ -11,23 +11,33 @@
 /// Returns "true" when the color is on a likely page surface (very light or
 /// very dark, low chroma). Caller compares baseline vs variant surface state
 /// to spot element add/remove transitions.
-pub fn visual_is_likely_page_surface(r : Int, g : Int, b : Int) -> String {
+pub fn visual_is_likely_page_surface(r : Int32, g : Int32, b : Int32) -> String {
   let max_c = if r > g {
-    if r > b { r } else { b }
+    if r > b {
+      r
+    } else {
+      b
+    }
   } else if g > b {
     g
   } else {
     b
   }
   let min_c = if r < g {
-    if r < b { r } else { b }
+    if r < b {
+      r
+    } else {
+      b
+    }
   } else if g < b {
     g
   } else {
     b
   }
   let chroma = max_c - min_c
-  let luma = 0.299 * r.to_double() + 0.587 * g.to_double() + 0.114 * b.to_double()
+  let luma = 0.299 * r.to_double() +
+    0.587 * g.to_double() +
+    0.114 * b.to_double()
   if chroma <= 12 && (luma >= 240.0 || luma <= 18.0) {
     "true"
   } else {
@@ -50,17 +60,17 @@ pub fn visual_is_likely_page_surface(r : Int, g : Int, b : Int) -> String {
 ///   element-added / element-removed
 pub fn visual_classify_region(
   region_type : String,
-  width : Int,
-  height : Int,
-  diff_pixel_count : Int,
-  total_pixels : Int,
+  width : Int32,
+  height : Int32,
+  diff_pixel_count : Int32,
+  total_pixels : Int32,
   has_color_sample : Bool,
-  baseline_r : Int,
-  baseline_g : Int,
-  baseline_b : Int,
-  current_r : Int,
-  current_g : Int,
-  current_b : Int,
+  baseline_r : Int32,
+  baseline_g : Int32,
+  baseline_b : Int32,
+  current_r : Int32,
+  current_g : Int32,
+  current_b : Int32,
 ) -> String {
   let area = width * height
   let safe_height = if height < 1 { 1 } else { height }
@@ -83,9 +93,13 @@ pub fn visual_classify_region(
 
   // Element presence change (background↔content transition).
   if has_color_sample && density >= 0.5 && area >= 1024 {
-    let baseline_surface = visual_is_likely_page_surface(baseline_r, baseline_g, baseline_b) ==
+    let baseline_surface = visual_is_likely_page_surface(
+        baseline_r, baseline_g, baseline_b,
+      ) ==
       "true"
-    let current_surface = visual_is_likely_page_surface(current_r, current_g, current_b) ==
+    let current_surface = visual_is_likely_page_surface(
+        current_r, current_g, current_b,
+      ) ==
       "true"
     if baseline_surface != current_surface {
       if baseline_surface {
@@ -129,6 +143,6 @@ pub fn visual_classify_region(
 /// within this many pixels collapse into one layout-shift entry. Lives here
 /// so the threshold is editable alongside the classifier rather than as a
 /// magic number on the TS side.
-pub fn visual_layout_shift_group_threshold() -> Int {
+pub fn visual_layout_shift_group_threshold() -> Int32 {
   64
 }

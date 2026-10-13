@@ -16,10 +16,10 @@
 ///|
 pub struct ClassifyRegionInput {
   region_type : String
-  width : Int
-  height : Int
-  diff_pixel_count : Int
-  total_pixels : Int
+  width : Int32
+  height : Int32
+  diff_pixel_count : Int32
+  total_pixels : Int32
   /// Absent when no colour was sampled. The positional form spent a boolean plus six
   /// numbers saying this.
   baseline_color : Rgb?
@@ -31,9 +31,10 @@ pub fn classify_region(input : ClassifyRegionInput) -> String {
   // The rule takes one `has_color_sample` covering both triples, so reconstruct it as
   // "both present" — which is what every existing caller sent, since a sample is a
   // baseline/current pair or nothing.
-  let has_sample = input.baseline_color is Some(_) && input.current_color is Some(_)
-  let baseline = input.baseline_color.unwrap_or({ r: 0, g: 0, b: 0 })
-  let current = input.current_color.unwrap_or({ r: 0, g: 0, b: 0 })
+  let has_sample = input.baseline_color is Some(_) &&
+    input.current_color is Some(_)
+  let baseline = input.baseline_color.unwrap_or({ r: 0, g: 0, b: 0, })
+  let current = input.current_color.unwrap_or({ r: 0, g: 0, b: 0, })
   visual_classify_region(
     input.region_type,
     input.width,
@@ -57,11 +58,11 @@ pub fn is_likely_page_surface(input : Rgb) -> String {
 
 ///|
 pub struct RegionKindInput {
-  area : Int
+  area : Int32
   aspect : Double
   luma_std : Double
-  color_count : Int
-  stripe_rows : Int
+  color_count : Int32
+  stripe_rows : Int32
 } derive(FromJson, ToJson)
 
 ///|
@@ -80,7 +81,7 @@ pub fn region_kind(input : RegionKindInput) -> String {
 pub struct DrilldownCandidate {
   flow : String
   priority_score : Double
-  order : Int
+  order : Int32
 } derive(FromJson, ToJson)
 
 ///|
@@ -89,10 +90,10 @@ pub struct DrilldownSelectInput {
 } derive(FromJson, ToJson)
 
 ///|
-pub fn drilldown_select_index(input : DrilldownSelectInput) -> Int {
+pub fn drilldown_select_index(input : DrilldownSelectInput) -> Int32 {
   let flows : Array[String] = []
   let scores : Array[Double] = []
-  let orders : Array[Int] = []
+  let orders : Array[Int32] = []
   for candidate in input.candidates {
     flows.push(candidate.flow)
     scores.push(candidate.priority_score)
@@ -105,7 +106,7 @@ pub fn drilldown_select_index(input : DrilldownSelectInput) -> Int {
 pub struct DrilldownPolicyInput {
   layout_score : Double
   decoration_score : Double
-  heatmap_kind_count : Int
+  heatmap_kind_count : Int32
 } derive(FromJson, ToJson)
 
 ///|

@@ -7,33 +7,33 @@ pub fn component_goal_status(
   pass_pixel : Double?,
   review_landscape : Double?,
   review_pixel : Double?,
-  scroll_total : Int,
-  scroll_broken : Int,
-  scroll_empty : Int,
-  expected_total : Int,
-  expected_missing : Int,
-  expected_broken : Int,
-  expected_empty : Int,
+  scroll_total : Int32,
+  scroll_broken : Int32,
+  scroll_empty : Int32,
+  expected_total : Int32,
+  expected_missing : Int32,
+  expected_broken : Int32,
+  expected_empty : Int32,
   landing_present : Bool,
   landing_hero_visible : Bool,
   landing_primary_cta_visible : Bool,
   landing_next_section_hint_visible : Bool,
   landing_media_slot_visible : Bool,
-  canvas_count : Int,
+  canvas_count : Int32,
   canvas_nonblank : Bool,
   canvas_frame_delta : Bool,
   canvas_input_responsive : Bool?,
   canvas_state_hook_present : Bool?,
-  canvas_missing_state_fields : Int,
+  canvas_missing_state_fields : Int32,
   expressive_present : Bool,
-  expressive_layers : Int,
-  expressive_shapes : Int,
+  expressive_layers : Int32,
+  expressive_shapes : Int32,
   expressive_selected_visible : Bool,
-  expressive_focusable_item_count : Int,
+  expressive_focusable_item_count : Int32,
   expressive_semantic_menu_text : Bool,
   expressive_diagonal_evidence : Bool,
   expressive_high_contrast : Bool,
-  expressive_low_contrast_item_count : Int,
+  expressive_low_contrast_item_count : Int32,
   expressive_hover_changed : Bool?,
   expressive_focus_visible_changed : Bool?,
 ) -> String {
@@ -121,13 +121,13 @@ fn review_if_pass(status : String) -> String {
 ///|
 fn app_shell_status(
   status : String,
-  scroll_total : Int,
-  scroll_broken : Int,
-  scroll_empty : Int,
-  expected_total : Int,
-  expected_missing : Int,
-  expected_broken : Int,
-  expected_empty : Int,
+  scroll_total : Int32,
+  scroll_broken : Int32,
+  scroll_empty : Int32,
+  expected_total : Int32,
+  expected_missing : Int32,
+  expected_broken : Int32,
+  expected_empty : Int32,
 ) -> String {
   if expected_total > 0 {
     if expected_missing > 0 || expected_broken > 0 {
@@ -171,12 +171,12 @@ fn landing_status(
 ///|
 fn canvas_status(
   status : String,
-  canvas_count : Int,
+  canvas_count : Int32,
   nonblank : Bool,
   frame_delta : Bool,
   input_responsive : Bool?,
   state_hook_present : Bool?,
-  missing_state_fields : Int,
+  missing_state_fields : Int32,
 ) -> String {
   if canvas_count == 0 || !nonblank {
     "fail"
@@ -193,14 +193,14 @@ fn canvas_status(
 fn expressive_menu_status(
   status : String,
   present : Bool,
-  layers : Int,
-  shapes : Int,
+  layers : Int32,
+  shapes : Int32,
   selected_visible : Bool,
-  focusable_item_count : Int,
+  focusable_item_count : Int32,
   semantic_menu_text : Bool,
   diagonal_evidence : Bool,
   high_contrast : Bool,
-  low_contrast_item_count : Int,
+  low_contrast_item_count : Int32,
   hover_changed : Bool?,
   focus_visible_changed : Bool?,
 ) -> String {
@@ -264,7 +264,7 @@ pub fn merge_component_probe_states(
 ///|
 pub fn component_scroll_target_source(
   required_state_kinds : String,
-  explicit_scrolled_target_count : Int,
+  explicit_scrolled_target_count : Int32,
 ) -> String {
   if explicit_scrolled_target_count > 0 {
     "state-targets"
@@ -300,7 +300,7 @@ pub fn semantic_drilldown_priority(
 ///|
 pub fn semantic_drilldown_reason_id(
   flow : String,
-  heatmap_kind_count : Int,
+  heatmap_kind_count : Int32,
 ) -> String {
   if flow == "layout" {
     "coarse-landscape"
@@ -315,8 +315,8 @@ pub fn semantic_drilldown_reason_id(
 pub fn semantic_drilldown_select_index(
   flows : Array[String],
   priority_scores : Array[Double],
-  orders : Array[Int],
-) -> Int {
+  orders : Array[Int32],
+) -> Int32 {
   let limit = min_int(
     flows.length(),
     min_int(priority_scores.length(), orders.length()),
@@ -332,11 +332,11 @@ pub fn semantic_drilldown_select_index(
 fn semantic_drilldown_select_loop(
   flows : Array[String],
   priority_scores : Array[Double],
-  orders : Array[Int],
-  limit : Int,
-  index : Int,
-  best : Int,
-) -> Int {
+  orders : Array[Int32],
+  limit : Int32,
+  index : Int32,
+  best : Int32,
+) -> Int32 {
   if index >= limit {
     best
   } else if semantic_drilldown_prefers(
@@ -371,10 +371,10 @@ fn semantic_drilldown_select_loop(
 fn semantic_drilldown_prefers(
   candidate_flow : String,
   candidate_priority : Double,
-  candidate_order : Int,
+  candidate_order : Int32,
   current_flow : String,
   current_priority : Double,
-  current_order : Int,
+  current_order : Int32,
 ) -> Bool {
   if candidate_flow == "layout" && current_flow != "layout" {
     true
@@ -390,7 +390,7 @@ fn semantic_drilldown_prefers(
 }
 
 ///|
-fn min_int(left : Int, right : Int) -> Int {
+fn min_int(left : Int32, right : Int32) -> Int32 {
   if left < right {
     left
   } else {
@@ -399,7 +399,7 @@ fn min_int(left : Int, right : Int) -> Int {
 }
 
 ///|
-pub fn ui_contract_version_issue_ids(version : Int) -> String {
+pub fn ui_contract_version_issue_ids(version : Int32) -> String {
   if version != 1 {
     "contract-version-unsupported"
   } else {
@@ -494,7 +494,7 @@ pub fn ui_contract_pattern_evidence_issue_ids(
   marker_kinds : String,
   required_state_kinds : String,
   state_kinds : String,
-  expected_scrollport_count : Int,
+  expected_scrollport_count : Int32,
   has_composition : Bool,
   has_canvas_state_hook : Bool,
   canvas_required_state_fields : String,
@@ -623,7 +623,7 @@ pub fn ui_contract_asset_issue_ids(id : String) -> String {
 ///|
 pub fn ui_contract_canvas_issue_ids(
   has_state_hook : Bool,
-  required_state_field_count : Int,
+  required_state_field_count : Int32,
 ) -> String {
   if required_state_field_count > 0 && !has_state_hook {
     "canvas-state-hook-required"
@@ -842,8 +842,8 @@ pub fn ui_contract_layout_issue_ids(
   height_value : Double,
   height_max : Double,
   display_kind : String,
-  display_columns_count : Int,
-  display_rows_count : Int,
+  display_columns_count : Int32,
+  display_rows_count : Int32,
 ) -> String {
   let issues : Array[String] = []
   if width_kind == "fluid" && !width_min_present && !width_max_present {

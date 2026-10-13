@@ -48,7 +48,6 @@ pub fn focus_order_classify(
   "ok"
 }
 
-
 ///|
 /// The same classification, plus the one fact the five-argument form cannot express: how wide
 /// the element focus came FROM was.

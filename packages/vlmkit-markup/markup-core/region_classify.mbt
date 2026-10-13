@@ -14,11 +14,11 @@
 /// Classify a region from extracted features. Returns "<kind>|<confidence>"
 /// where confidence is rendered with 2 decimals.
 pub fn region_classify_kind(
-  area : Int,
+  area : Int32,
   aspect : Double,
   luma_std : Double,
-  color_count : Int,
-  stripe_rows : Int,
+  color_count : Int32,
+  stripe_rows : Int32,
 ) -> String {
   // Tiny region — likely icon or single character.
   if area < 2000 && aspect > 0.4 && aspect < 2.5 {

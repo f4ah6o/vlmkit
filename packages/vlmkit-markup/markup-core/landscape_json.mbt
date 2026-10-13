@@ -69,15 +69,15 @@ pub fn landscape_cell_hex_json(input : LandscapeCellHexInput) -> String {
 
 ///|
 pub struct LandscapeGridInput {
-  width : Int
-  height : Int
+  width : Int32
+  height : Int32
 } derive(FromJson, ToJson)
 
 ///|
 /// `cols|rows` was two integers in a string. It is two integers.
 pub struct LandscapeGrid {
-  cols : Int
-  rows : Int
+  cols : Int32
+  rows : Int32
 } derive(ToJson)
 
 ///|
@@ -90,17 +90,17 @@ pub fn landscape_default_grid_json(input : LandscapeGridInput) -> LandscapeGrid 
 
 ///|
 pub struct LandscapeDiffInput {
-  cols : Int
-  rows : Int
+  cols : Int32
+  rows : Int32
   changed_threshold : Double
-  top_n : Int
+  top_n : Int32
   baseline : Array[LandscapeCell]
   current : Array[LandscapeCell]
 } derive(FromJson, ToJson)
 
 ///|
 pub struct LandscapeTopCell {
-  index : Int
+  index : Int32
   score : Double
 } derive(ToJson)
 
@@ -108,8 +108,8 @@ pub struct LandscapeTopCell {
 pub struct LandscapeDiffOutput {
   mean : Double
   similarity : Double
-  changed : Int
-  total : Int
+  changed : Int32
+  total : Int32
   top : Array[LandscapeTopCell]
 } derive(ToJson)
 
@@ -125,7 +125,7 @@ pub struct LandscapeDiffOutput {
 pub fn landscape_diff(input : LandscapeDiffInput) -> LandscapeDiffOutput raise {
   let total = input.rows * input.cols
   if total <= 0 {
-    return { mean: 1.0, similarity: 0.0, changed: 0, total: 0, top: [] }
+    return { mean: 1.0, similarity: 0.0, changed: 0, total: 0, top: [], }
   }
   // Raised, not returned as a "mismatch" sentinel. A caller that has to inspect a
   // success-shaped result to learn it failed will eventually forget to.
@@ -137,11 +137,22 @@ pub fn landscape_diff(input : LandscapeDiffInput) -> LandscapeDiffOutput raise {
   }
   let scores : Array[Double] = []
   let mut sum : Double = 0.0
-  let mut changed : Int = 0
+  let mut changed : Int32 = 0
   for idx in 0..<total {
     let b = input.baseline[idx]
     let c = input.current[idx]
-    let score = landscape_cell_score(b.r, b.g, b.b, b.l, b.ink, c.r, c.g, c.b, c.l, c.ink)
+    let score = landscape_cell_score(
+      b.r,
+      b.g,
+      b.b,
+      b.l,
+      b.ink,
+      c.r,
+      c.g,
+      c.b,
+      c.l,
+      c.ink,
+    )
     scores.push(score)
     sum = sum + score
     if score >= input.changed_threshold {
@@ -152,7 +163,7 @@ pub fn landscape_diff(input : LandscapeDiffInput) -> LandscapeDiffOutput raise {
   let similarity = if 1.0 - mean > 0.0 { 1.0 - mean } else { 0.0 }
   let top : Array[LandscapeTopCell] = []
   for idx in collect_top_indices(scores, input.top_n) {
-    top.push({ index: idx, score: scores[idx] })
+    top.push({ index: idx, score: scores[idx], })
   }
-  { mean, similarity, changed, total, top }
+  { mean, similarity, changed, total, top, }
 }
