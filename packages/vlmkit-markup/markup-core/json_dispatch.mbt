@@ -61,8 +61,8 @@ pub struct LayoutPolicyInput {
   height_value : Double?
   height_max : Double?
   display_kind : String
-  display_columns_count : Int
-  display_rows_count : Int
+  display_columns_count : Int32
+  display_rows_count : Int32
 } derive(FromJson, ToJson)
 
 ///|
@@ -252,39 +252,15 @@ pub fn run_json(command : String, payload : String) -> String raise {
 /// instead of discovering a typo at the first call.
 pub fn json_commands() -> Array[String] {
   [
-    "layout-policy-issue-ids",
-    "interaction-issues",
-    "goal-status",
-    "screen-issue-ids",
-    "viewport-issue-ids",
-    "landmark-issue-ids",
-    "marker-issue-ids",
-    "state-issue-ids",
-    "required-state-issue-ids",
-    "expected-scrollport-issue-ids",
-    "composition-layer-issue-ids",
-    "composition-shape-issue-ids",
-    "composition-motion-issue-ids",
-    "decoration-palette-issue-ids",
-    "pattern-evidence-issue-ids",
-    "contrast-evaluate",
-    "touch-in-cluster",
-    "touch-policy",
-    "focus-order-classify",
-    "grid-arrays-close",
-    "grid-gcd",
-    "shift-classify-suspect",
-    "quality-error-state-kind",
-    "quality-coverage-passed",
-    "landscape-cell-score",
-    "landscape-cell-hex",
-    "landscape-default-grid",
-    "landscape-diff-summary",
-    "visual-classify-region",
-    "visual-is-likely-page-surface",
-    "region-classify-kind",
-    "semantic-drilldown-select-index",
-    "semantic-drilldown-policy",
-    "merge-component-probe-states",
+    "layout-policy-issue-ids", "interaction-issues", "goal-status", "screen-issue-ids",
+    "viewport-issue-ids", "landmark-issue-ids", "marker-issue-ids", "state-issue-ids",
+    "required-state-issue-ids", "expected-scrollport-issue-ids", "composition-layer-issue-ids",
+    "composition-shape-issue-ids", "composition-motion-issue-ids", "decoration-palette-issue-ids",
+    "pattern-evidence-issue-ids", "contrast-evaluate", "touch-in-cluster", "touch-policy",
+    "focus-order-classify", "grid-arrays-close", "grid-gcd", "shift-classify-suspect",
+    "quality-error-state-kind", "quality-coverage-passed", "landscape-cell-score",
+    "landscape-cell-hex", "landscape-default-grid", "landscape-diff-summary", "visual-classify-region",
+    "visual-is-likely-page-surface", "region-classify-kind", "semantic-drilldown-select-index",
+    "semantic-drilldown-policy", "merge-component-probe-states",
   ]
 }

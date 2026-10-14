@@ -70,7 +70,7 @@ pub struct InteractionIssueOutput {
   /// back by position, which is unambiguous — an earlier version reported the
   /// element's own `index` field and a caller that reused one value across
   /// elements got every finding labelled with the last of them.
-  element_position : Int
+  element_position : Int32
   /// Values the TypeScript wording interpolates: the activation key, the popup
   /// role, the dangling `aria-controls` id. Only ever set when that rule's message
   /// uses them.
@@ -88,12 +88,19 @@ let roving_roles : Array[String] = ["tab", "radio", "menuitem", "option"]
 fn issue(
   kind : String,
   severity : String,
-  index : Int,
+  index : Int32,
   key~ : String? = None,
   popup_role~ : String? = None,
   broken_controls_id~ : String? = None,
 ) -> InteractionIssueOutput {
-  { kind, severity, element_position: index, key, popup_role, broken_controls_id }
+  {
+    kind,
+    severity,
+    element_position: index,
+    key,
+    popup_role,
+    broken_controls_id,
+  }
 }
 
 ///|
@@ -111,7 +118,7 @@ pub fn interaction_issues(
   // same-role sibling really is reachable.
   let reachable_roles : Array[String] = []
   for element in input.elements {
-    if element.tab_reachable && !(reachable_roles.contains(element.role)) {
+    if element.tab_reachable && !reachable_roles.contains(element.role) {
       reachable_roles.push(element.role)
     }
   }
@@ -119,44 +126,63 @@ pub fn interaction_issues(
     match element.activation {
       Some(activation) => {
         if element.has_aria_expanded &&
-          !(activation.aria_delta_has_expanded) &&
-          !(activation.layout_changed) {
-          issues.push(issue("dead-disclosure", "suspect", i, key=Some(activation.key)))
+          !activation.aria_delta_has_expanded &&
+          !activation.layout_changed {
+          issues.push(
+            issue("dead-disclosure", "suspect", i, key=Some(activation.key)),
+          )
         }
         match activation.broken_controls_id {
           Some(id) =>
             issues.push(
-              issue("broken-aria-controls", "suspect", i, broken_controls_id=Some(id)),
+              issue(
+                "broken-aria-controls",
+                "suspect",
+                i,
+                broken_controls_id=Some(id),
+              ),
             )
           None => ()
         }
         if activation.key != "ArrowRight" &&
           activation.key != "ArrowDown" &&
           activation.aria_delta_empty &&
-          !(activation.layout_changed) &&
+          !activation.layout_changed &&
           // An announcement is an observable response: a pager that swaps its rows and says
           // "Showing 7–12 of 12 orders" was reported dead because its layout did not change.
           !(activation.live_region_changed is Some(true)) &&
-          !(activation.focus_moved) &&
-          !(element.has_aria_expanded) &&
+          !activation.focus_moved &&
+          !element.has_aria_expanded &&
           // A disabled Previous on page 1, or the current page's own button, is right to do
           // nothing — and says so in its markup.
           !(element.declares_no_op is Some(true)) {
-          issues.push(issue("inert-control", "warn", i, key=Some(activation.key)))
+          issues.push(
+            issue("inert-control", "warn", i, key=Some(activation.key)),
+          )
         }
         if element.tab_reachable && element.focus_indicator is Some(false) {
           issues.push(issue("no-focus-indicator", "warn", i))
         }
-        if !(element.tab_reachable) &&
-          !(roving_roles.contains(element.role) && reachable_roles.contains(element.role)) {
+        if !element.tab_reachable &&
+          !(roving_roles.contains(element.role) &&
+          reachable_roles.contains(element.role)) {
           issues.push(issue("not-tab-reachable", "warn", i))
         }
         match activation.popup_role {
           Some(popup_role) =>
-            if (popup_role == "dialog" || popup_role == "menu" || popup_role == "listbox") &&
+            if (
+                popup_role == "dialog" ||
+                popup_role == "menu" ||
+                popup_role == "listbox"
+              ) &&
               activation.focus_moved_into_popup is Some(false) {
               issues.push(
-                issue("popup-no-focus-move", "warn", i, popup_role=Some(popup_role)),
+                issue(
+                  "popup-no-focus-move",
+                  "warn",
+                  i,
+                  popup_role=Some(popup_role),
+                ),
               )
             }
           None => ()
@@ -166,13 +192,20 @@ pub fn interaction_issues(
         }
         if (element.role == "grid" || element.role == "listbox") &&
           activation.aria_delta_empty &&
-          !(activation.focus_moved_within) &&
-          !(activation.focus_moved) {
-          issues.push(issue("composite-arrows-dead", "warn", i, key=Some(activation.key)))
+          !activation.focus_moved_within &&
+          !activation.focus_moved {
+          issues.push(
+            issue("composite-arrows-dead", "warn", i, key=Some(activation.key)),
+          )
         }
         if activation.popup_arrow_cycles is Some(false) {
           issues.push(
-            issue("popup-arrows-dead", "warn", i, popup_role=activation.popup_role),
+            issue(
+              "popup-arrows-dead",
+              "warn",
+              i,
+              popup_role=activation.popup_role,
+            ),
           )
         }
         if activation.escape_closes is Some(true) &&
@@ -192,8 +225,9 @@ pub fn interaction_issues(
         if element.tab_reachable && element.focus_indicator is Some(false) {
           issues.push(issue("no-focus-indicator", "warn", i))
         }
-        if !(element.tab_reachable) &&
-          !(roving_roles.contains(element.role) && reachable_roles.contains(element.role)) {
+        if !element.tab_reachable &&
+          !(roving_roles.contains(element.role) &&
+          reachable_roles.contains(element.role)) {
           issues.push(issue("not-tab-reachable", "warn", i))
         }
       }

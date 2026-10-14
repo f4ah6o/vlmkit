@@ -9,12 +9,12 @@
 ///|
 /// Relative luminance per WCAG 2.1 formula. Inputs are 8-bit channel
 /// values in [0, 255].
-fn rel_luma(r : Int, g : Int, b : Int) -> Double {
+fn rel_luma(r : Int32, g : Int32, b : Int32) -> Double {
   channel(r) * 0.2126 + channel(g) * 0.7152 + channel(b) * 0.0722
 }
 
 ///|
-fn channel(c : Int) -> Double {
+fn channel(c : Int32) -> Double {
   let v = c.to_double() / 255.0
   if v <= 0.03928 {
     v / 12.92
@@ -27,12 +27,12 @@ fn channel(c : Int) -> Double {
 /// WCAG contrast ratio between two RGB triples ∈ [0, 255]. Output is
 /// `(L_lighter + 0.05) / (L_darker + 0.05)` so values range from 1 to 21.
 pub fn a11y_contrast_ratio(
-  fr : Int,
-  fg : Int,
-  fb : Int,
-  br : Int,
-  bg : Int,
-  bb : Int,
+  fr : Int32,
+  fg : Int32,
+  fb : Int32,
+  br : Int32,
+  bg : Int32,
+  bb : Int32,
 ) -> Double {
   let la = rel_luma(fr, fg, fb)
   let lb = rel_luma(br, bg, bb)
@@ -50,18 +50,17 @@ pub fn a11y_contrast_ratio(
 /// "Large text" per WCAG 2.1: font-size ≥ 18 px OR (font-size ≥ 14 px AND
 /// font-weight ≥ 700).
 pub fn a11y_contrast_evaluate(
-  fr : Int,
-  fg : Int,
-  fb : Int,
-  br : Int,
-  bg : Int,
-  bb : Int,
+  fr : Int32,
+  fg : Int32,
+  fb : Int32,
+  br : Int32,
+  bg : Int32,
+  bb : Int32,
   font_size : Double,
-  font_weight : Int,
+  font_weight : Int32,
 ) -> String {
   let ratio = a11y_contrast_ratio(fr, fg, fb, br, bg, bb)
-  let is_large = font_size >= 18.0 ||
-    (font_size >= 14.0 && font_weight >= 700)
+  let is_large = font_size >= 18.0 || (font_size >= 14.0 && font_weight >= 700)
   let required_aa = if is_large { 3.0 } else { 4.5 }
   let level = if ratio >= 7.0 {
     "AAA"
@@ -72,11 +71,7 @@ pub fn a11y_contrast_evaluate(
   } else {
     "fail"
   }
-  format_two_dp_contrast(ratio) +
-  "|" +
-  format_one_dp(required_aa) +
-  "|" +
-  level
+  format_two_dp_contrast(ratio) + "|" + format_one_dp(required_aa) + "|" + level
 }
 
 ///|

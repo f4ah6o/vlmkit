@@ -31,17 +31,17 @@ pub struct GoalThresholds {
 
 ///|
 pub struct GoalExpectedScrollports {
-  total : Int
-  missing : Int
-  broken : Int
-  empty : Int
+  total : Int32
+  missing : Int32
+  broken : Int32
+  empty : Int32
 } derive(FromJson, ToJson)
 
 ///|
 pub struct GoalScrollports {
-  total : Int
-  broken : Int
-  empty : Int
+  total : Int32
+  broken : Int32
+  empty : Int32
   expected : GoalExpectedScrollports?
 } derive(FromJson, ToJson)
 
@@ -55,26 +55,26 @@ pub struct GoalLanding {
 
 ///|
 pub struct GoalCanvas {
-  canvas_count : Int
+  canvas_count : Int32
   nonblank : Bool
   frame_delta : Bool
   input_responsive : Bool?
   /// `None` when the contract declares no state hook at all, which is not the same
   /// as declaring one that is missing.
   state_hook_present : Bool?
-  missing_state_fields : Int
+  missing_state_fields : Int32
 } derive(FromJson, ToJson)
 
 ///|
 pub struct GoalExpressiveMenu {
-  composition_layers : Int
-  composition_shapes : Int
+  composition_layers : Int32
+  composition_shapes : Int32
   selected_visible : Bool
-  focusable_item_count : Int
+  focusable_item_count : Int32
   semantic_menu_text : Bool
   diagonal_evidence : Bool
   high_contrast : Bool
-  low_contrast_item_count : Int
+  low_contrast_item_count : Int32
   hover_changed : Bool?
   focus_visible_changed : Bool?
 } derive(FromJson, ToJson)

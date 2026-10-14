@@ -23,7 +23,7 @@ pub fn quality_error_state_kind(
 
 ///|
 /// Coverage gate: 80% of affected components must be covered.
-pub fn quality_coverage_passed(covered : Int, total : Int) -> Bool {
+pub fn quality_coverage_passed(covered : Int32, total : Int32) -> Bool {
   if total <= 0 {
     return true
   }

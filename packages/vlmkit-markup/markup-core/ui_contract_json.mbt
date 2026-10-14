@@ -42,7 +42,10 @@ pub struct ScreenIssuesInput {
 pub fn screen_issue_ids(input : ScreenIssuesInput) -> Array[String] {
   split_issue_ids(
     ui_contract_screen_issue_ids(
-      input.id, input.pattern, input.goal, input.source_of_truth,
+      input.id,
+      input.pattern,
+      input.goal,
+      input.source_of_truth,
     ),
   )
 }
@@ -84,7 +87,11 @@ pub struct LandmarkIssuesInput {
 pub fn landmark_issue_ids(input : LandmarkIssuesInput) -> Array[String] {
   split_issue_ids(
     ui_contract_landmark_issue_ids(
-      input.id, input.role, input.name, input.parent_id_present, input.parent_known,
+      input.id,
+      input.role,
+      input.name,
+      input.parent_id_present,
+      input.parent_known,
     ),
   )
 }
@@ -124,7 +131,11 @@ pub struct StateIssuesInput {
 pub fn state_issue_ids(input : StateIssuesInput) -> Array[String] {
   split_issue_ids(
     ui_contract_state_issue_ids(
-      input.id, input.kind, input.required, input.has_selector, input.has_trigger,
+      input.id,
+      input.kind,
+      input.required,
+      input.has_selector,
+      input.has_trigger,
     ),
   )
 }
@@ -141,7 +152,9 @@ pub struct RequiredStateIssuesInput {
 } derive(FromJson, ToJson)
 
 ///|
-pub fn required_state_issue_ids(input : RequiredStateIssuesInput) -> Array[String] {
+pub fn required_state_issue_ids(
+  input : RequiredStateIssuesInput,
+) -> Array[String] {
   split_issue_ids(
     ui_contract_required_state_issue_ids(
       input.id,
@@ -224,7 +237,11 @@ pub fn composition_shape_issue_ids(
   input : CompositionShapeIssuesInput,
 ) -> Array[String] {
   split_issue_ids(
-    ui_contract_composition_shape_issue_ids(input.id, input.kind, input.duplicate_id),
+    ui_contract_composition_shape_issue_ids(
+      input.id,
+      input.kind,
+      input.duplicate_id,
+    ),
   )
 }
 
@@ -270,7 +287,8 @@ pub fn decoration_palette_issue_ids(
 ) -> Array[String] {
   split_issue_ids(
     ui_contract_decoration_palette_issue_ids(
-      input.role, input.value.unwrap_or(""),
+      input.role,
+      input.value.unwrap_or(""),
     ),
   )
 }
@@ -282,7 +300,7 @@ pub struct PatternEvidenceIssuesInput {
   marker_kinds : Array[String]
   required_state_kinds : Array[String]
   state_kinds : Array[String]
-  expected_scrollport_count : Int
+  expected_scrollport_count : Int32
   has_composition : Bool
   has_canvas_state_hook : Bool
   canvas_required_state_fields : Array[String]
@@ -318,7 +336,8 @@ fn split_issue_ids(joined : String) -> Array[String] {
   }
 }
 
-///| The inverse, for the rule functions that still take a joined list.
+///|
+/// The inverse, for the rule functions that still take a joined list.
 fn join_issue_ids(values : Array[String]) -> String {
   let mut out = ""
   for i, value in values {

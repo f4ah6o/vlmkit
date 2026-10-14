@@ -46,9 +46,9 @@ jobs:
       - name: Setup pinned MoonBit compiler
         uses: hustcer/setup-moonbit@v1.23
         with:
-          version: 0.10.14+7d59c7ec9
+          version: 0.10.15+943464bfa
           setup-core: true
-          core-version: 0.10.14+7d59c7ec9
+          core-version: 0.10.15+943464bfa
 
       - name: Allow the pinned esbuild install script
         run: pnpm config set --location=project --json allowBuilds '{"esbuild":true}'

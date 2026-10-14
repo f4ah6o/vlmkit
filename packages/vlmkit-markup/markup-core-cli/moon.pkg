@@ -1,9 +1,7 @@
 import {
   "mizchi/vlmkit-markup/markup-core" @core,
-  "moonbitlang/core/env" @env,
-  "moonbitlang/core/string" @string,
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
 }
 
-options(
-  "is-main": true,
-)
+pkgtype(kind: "executable")

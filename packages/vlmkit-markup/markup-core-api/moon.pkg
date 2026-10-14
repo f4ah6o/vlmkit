@@ -1,8 +1,17 @@
 import {
   "mizchi/vlmkit-markup/markup-core" @core,
-  "moonbitlang/core/string" @string,
+  "moonbitlang/core/string",
 }
 
 options(
-  link: { "js": { "exports": [ "run_markup_core", "run_markup_core_json", "markup_core_json_commands" ], "format": "esm" } },
+  link: {
+    "js": {
+      "exports": [
+        "run_markup_core",
+        "run_markup_core_json",
+        "markup_core_json_commands",
+      ],
+      "format": "esm",
+    },
+  },
 )

@@ -39,7 +39,7 @@
 ///   "AA"  → 24 (WCAG 2.5.8 — Target Size (Minimum): ≥ 24 px × 24 px,
 ///               with spacing leniency)
 /// Anything else falls back to AAA (44).
-pub fn a11y_touch_required_side(level : String) -> Int {
+pub fn a11y_touch_required_side(level : String) -> Int32 {
   if level == "AA" {
     24
   } else {
@@ -122,7 +122,7 @@ pub struct TouchPolicyInput {
 pub struct TouchVerdictOutput {
   /// Position in the input array. Positional, not any id the element carries — see
   /// `InteractionIssueOutput.element_position` for why.
-  target_position : Int
+  target_position : Int32
   min_side : Double
   /// Below the level's floor. True even when an exception applies: the exception decides
   /// whether it is a *finding*, and the caller lists exempted targets rather than
@@ -137,7 +137,7 @@ pub struct TouchVerdictOutput {
 
 ///|
 pub struct TouchPolicyOutput {
-  required : Int
+  required : Int32
   verdicts : Array[TouchVerdictOutput]
 } derive(ToJson)
 
@@ -174,7 +174,7 @@ fn point_rect_distance(px : Double, py : Double, rect : TouchRect) -> Double {
 fn touch_spacing_clear(
   targets : Array[TouchTargetInput],
   undersized : Array[Bool],
-  index : Int,
+  index : Int32,
   radius : Double,
 ) -> Bool {
   let subject = targets[index]
@@ -264,5 +264,5 @@ pub fn touch_policy(input : TouchPolicyInput) -> TouchPolicyOutput {
       clustered,
     })
   }
-  { required, verdicts }
+  { required, verdicts, }
 }
