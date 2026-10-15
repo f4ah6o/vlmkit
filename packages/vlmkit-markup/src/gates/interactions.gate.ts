@@ -17,6 +17,7 @@
 
 import type { RuleView } from "@mizchi/vlmkit-core/plugin/contract.ts";
 import { readFlag } from "@mizchi/vlmkit-core/arg-reader.ts";
+import { UsageError } from "@mizchi/vlmkit-core/cli-error.ts";
 import { PAGE_LOAD_INPUTS, type PageLoadOptions, parsePageLoad } from "@mizchi/vlmkit-core/page-load.ts";
 import { defineGate } from "@mizchi/vlmkit-core/plugin/contract.ts";
 import type { Finding } from "@mizchi/vlmkit-core/plugin/contract.ts";
@@ -45,6 +46,11 @@ export interface InteractionsGateOptions extends PageLoadOptions {
   reference?: string;
   maxElements: number;
   handlers: boolean;
+  nativeAgent?: string;
+  launch?: boolean;
+  window?: string;
+  maxDepth?: number;
+  maxNodes?: number;
 }
 
 export interface InteractionsGateReport {
@@ -136,28 +142,95 @@ contract and every response mismatch is reported.`,
       kind: "boolean",
       description: "Also enumerate the wired event-callback surface (scan handlers) and cross-check it",
     },
+    { name: "native-agent", placeholder: "path", kind: "path", description: "macOS native agent executable" },
+    { name: "launch", kind: "boolean", description: "Launch a macOS target when needed" },
+    {
+      name: "window",
+      placeholder: "selector",
+      kind: "string",
+      description: "macOS window: main|focused|index=N|window id",
+    },
+    { name: "max-depth", placeholder: "n", kind: "number", description: "Native AX traversal depth" },
+    { name: "max-nodes", placeholder: "n", kind: "number", description: "Native AX traversal node cap" },
     ...PAGE_LOAD_INPUTS,
   ],
   parse: (argv) => {
-    const source = firstPositional(argv, "vlmkit check interactions <html-or-url>", ["--reference", "--max-elements"]);
+    const source = firstPositional(argv, "vlmkit check interactions <html-or-url|macos:target>", [
+      "--reference",
+      "--max-elements",
+      "--native-agent",
+      "--window",
+      "--max-depth",
+      "--max-nodes",
+    ]);
     const reference = readFlag(argv, "reference");
     const maxElements = optionalInt(argv, "max-elements", { min: 1 }) ?? 30;
+    const nativeAgent = readFlag(argv, "native-agent");
+    const window = readFlag(argv, "window");
+    const maxDepth = optionalInt(argv, "max-depth", { min: 1 });
+    const maxNodes = optionalInt(argv, "max-nodes", { min: 1 });
+    const launch = argv.includes("--launch");
+    const handlers = argv.includes("--handlers");
+    const native = source.startsWith("macos:");
+    if (!native && (nativeAgent || window || maxDepth || maxNodes || launch)) {
+      throw new UsageError("--native-agent/--launch/--window/--max-depth/--max-nodes require a macos: source.");
+    }
+    if (native && handlers) throw new UsageError("--handlers is DOM-specific and is not available for macos: sources.");
+    if (native && reference && !reference.startsWith("macos:")) {
+      throw new UsageError("--reference for a macos: interaction contract must also be a macos: target.");
+    }
     return {
       source,
       maxElements,
-      handlers: argv.includes("--handlers"),
+      handlers,
       ...(reference ? { reference } : {}),
+      ...(nativeAgent ? { nativeAgent } : {}),
+      ...(window ? { window } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(maxNodes !== undefined ? { maxNodes } : {}),
+      ...(launch ? { launch: true } : {}),
       ...parsePageLoad(argv),
     };
   },
-  run: async ({ source, reference, maxElements, handlers, ...pageLoad }) => {
-    const map = await buildInteractionMap({ source, maxElements, ...pageLoad });
+  run: async ({
+    source,
+    reference,
+    maxElements,
+    handlers,
+    nativeAgent,
+    launch,
+    window,
+    maxDepth,
+    maxNodes,
+    ...pageLoad
+  }) => {
+    const native = source.startsWith("macos:");
+    if (native && (pageLoad.har || pageLoad.waitUntil)) {
+      throw new UsageError("Native interactions do not accept browser --har/--wait-until options.");
+    }
+    const buildMap = async (target: string) => {
+      if (native) {
+        const { buildNativeInteractionMap } = await import("../native/native-surface.ts");
+        return buildNativeInteractionMap({
+          source: target,
+          maxElements,
+          ...(nativeAgent ? { nativeAgent } : {}),
+          ...(launch ? { launch: true } : {}),
+          ...(window ? { window } : {}),
+          ...(maxDepth !== undefined ? { maxDepth } : {}),
+          ...(maxNodes !== undefined ? { maxNodes } : {}),
+          ...(pageLoad.timeout !== undefined ? { timeout: pageLoad.timeout } : {}),
+        });
+      }
+      return buildInteractionMap({ source: target, maxElements, ...pageLoad });
+    };
+    const map = await buildMap(source);
     const report: InteractionsGateReport = { map, issues: deriveInteractionIssues(map) };
     if (reference) {
       // The reference is measured with the same load options: comparing a
       // settled attempt against an early-read reference would report the
       // reference's placeholder as the contract.
-      const refMap = await buildInteractionMap({ source: reference, maxElements, ...pageLoad });
+      const refMap = await buildMap(reference);
       report.comparison = compareInteractionMaps(refMap, map);
     }
     if (handlers) {

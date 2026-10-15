@@ -69,6 +69,22 @@ A partial capture still writes valid artifacts, and `scan a11y` reports
 using the generic tree gate: the generic format does not assert completeness.
 Native scan does not accept `--click` or browser/dump-specific options.
 
+Protocol v1 also exposes native interaction methods without opening a network listener:
+
+- `hitTest`: maps window-local screenshot pixels through the capture scale/origin and resolves the
+  exact AX element plus ancestors and a stable locator when available.
+- `perform`: executes explicit semantic or physical actions. Semantic mode supports press, focus,
+  and text-field value setting. Physical mode supports click, Unicode text/key input, and pixel
+  scrolling through CoreGraphics events.
+- stable-id, role/name, path and screenshot-point locators are explicit. Ambiguous role/name
+  locators fail with `NATIVE_LOCATOR_AMBIGUOUS`; they are never acted on implicitly.
+- optional `evidencePath` is JSONL. Typed text is redacted to `textLength`; action mode,
+  resolved target, coordinates and locator are retained.
+
+The TypeScript API `openNativeInteractionSession()` owns one target/window session and exposes
+`hitTest()`, `perform()`, and idempotent `close()`. Physical and semantic action modes remain
+distinct in both results and evidence.
+
 Validation:
 
 ```sh
@@ -96,3 +112,23 @@ silently filtered in a platform-specific judge.
 Fixture options passed through `./script/build_and_run.sh`: `--two-windows`,
 `--ambiguous` (two borderless ordinary windows), `--unchecked`, and
 `--duplicate-identifiers`. The fixture has no network or animation.
+
+
+## GPUI / gpui.mbt black-box acceptance
+
+VLMKit deliberately has no GPUI runtime dependency. Once a GPUI or gpui.mbt app
+exposes a stable macOS accessibility identifier, validate the built application
+from outside the process:
+
+```bash
+node native/macos/script/gpui_acceptance.mjs /path/MyGpuiApp.app \
+  --id fixture.save \
+  --name Save \
+  --agent native/macos/dist/VLMKitNativeAgent.app/Contents/MacOS/VLMKitNativeAgent
+```
+
+The runner captures the same window before and after the action, verifies the
+stable AXIdentifier in the semantic tree, maps its screenshot-space center back
+through AX hit testing, performs a physical click, and writes the action
+evidence. A failure here is classified as either native-driver/environment or
+application accessibility exposure; no GPUI-specific private hook is used.

@@ -508,6 +508,10 @@ export async function runSnapshotCli(cliArgs: readonly string[], options: { cwd?
   }
 
   const cwd = options.cwd ?? process.cwd();
+  if (cliArgs.some((arg) => arg.startsWith("macos:"))) {
+    const { runNativeSnapshotCli } = await import("./native-snapshot.ts");
+    return runNativeSnapshotCli(cliArgs, { cwd });
+  }
   const { config, configPath } = await loadSnapshotConfigForCli([...cliArgs], cwd);
   const parsed = parseSnapshotCliArgs([...cliArgs], config, cwd);
   // Against `cwd`, not the process's. The parser already resolves its DEFAULT
