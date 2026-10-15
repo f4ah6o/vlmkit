@@ -46,7 +46,7 @@ class Client:
 
 def fixture(*args):
     env = dict(os.environ, GTK_MODULES='gail:atk-bridge', NO_AT_BRIDGE='0', GDK_BACKEND='x11')
-    p = subprocess.Popen(['/usr/bin/python3', str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
+    p = subprocess.Popen([sys.executable, str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
     assert select.select([p.stdout], [], [], 15)[0], 'GTK fixture startup timed out'
     ready = json.loads(p.stdout.readline())
     assert ready['ready'] and ready['pid'] == p.pid

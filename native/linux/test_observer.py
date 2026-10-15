@@ -8,11 +8,68 @@ import subprocess
 import sys
 import unittest
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zlib
 
 import observer as o
 from integration import verify_occlusion_setup
+
+
+class TreeAtspi:
+    """In-memory AT-SPI-shaped tree used to check traversal without a desktop."""
+    def __init__(self, children=None, foreign=(), geometryless=()):
+        self.tree = children or {}
+        self.foreign = set(foreign)
+        self.geometryless = set(geometryless)
+        self.child_fetches = []
+
+    def pid(self, obj): return 101 if obj in self.foreign else 100
+    def text(self, name, obj):
+        if name == 'accessible_get_role_name': return 'push button'
+        if name == 'accessible_get_name': return ''
+        if name == 'accessible_get_accessible_id': return 'real-id'
+        raise AssertionError(name)
+    def bounds(self, obj):
+        return None if obj in self.geometryless else o.rect(-90, 25, 20, 10)
+    def states(self, obj): return {}
+    def obj(self, *args, **kwargs): return None
+    def child_count(self, obj): return len(self.tree.get(obj, ()))
+    def child_at(self, obj, index):
+        self.child_fetches.append((obj, index))
+        return self.tree[obj][index]
+
+
+class BudgetTreeAtspi(TreeAtspi, o.Atspi):
+    """Tree fixture using Atspi's real per-request reference accounting."""
+    def __init__(self, children, reference_limit):
+        TreeAtspi.__init__(self, children)
+        self.refs = []
+        self.visited_used = 0
+        self.visited_limit = o.MAX_AX_VISITED
+        self.references_used = 0
+        self.references_limit = reference_limit
+        self.unref = Mock()
+
+    def obj(self, name, obj=None, args=(), types=(), error=True, critical=False):
+        self.reserve_reference(critical=critical)
+        if name == 'accessible_get_component_iface':
+            value = ('component', obj)
+            self.refs.append(value)
+            return value
+        if name == 'accessible_get_child_at_index':
+            value = self.tree[obj][args[0]]
+            self.refs.append(value)
+            self.child_fetches.append((obj, args[0]))
+            return value
+        return None
+
+    def child_at(self, obj, index):
+        self.reserve_visit()
+        return self.obj('accessible_get_child_at_index', obj, (index,), (int,))
+
+    def bounds(self, obj, critical=False):
+        self.obj('accessible_get_component_iface', obj, error=False, critical=critical)
+        return None if obj in self.geometryless else o.rect(-90, 25, 20, 10)
 
 
 class ObserverTests(unittest.TestCase):
@@ -124,27 +181,204 @@ class ObserverTests(unittest.TestCase):
             o.png_from_ximage(image, visual)
 
     def test_traversal_bounds_identifiers_negative_origin(self):
-        class Fake:
-            def pid(self, obj): return 100 if obj != 5 else 101
-            def text(self, name, obj):
-                return {'accessible_get_role_name': 'push button', 'accessible_get_name': '', 'accessible_get_accessible_id': 'real-id'}[name]
-            def bounds(self, obj): return o.rect(-90, 25, 20, 10)
-            def states(self, obj): return {}
-            def obj(self, *args, **kwargs): return None
-            def children(self, obj): return iter([(0, 2), (1, 3), (2, 5)]) if obj == 1 else iter([])
-        nodes, counts, diagnostics = o.collect(Fake(), 1, 100, o.rect(-100, 20, 100, 100))
+        fake = TreeAtspi({1: [2, 3, 5]}, foreign=[5])
+        nodes, counts, diagnostics = o.collect(fake, 1, 100, o.rect(-100, 20, 100, 100))
         self.assertEqual(nodes[0]['rect'], o.rect(10, 5, 20, 10))
         self.assertEqual(nodes[0]['identifier'], 'real-id')
         self.assertNotIn('actions', nodes[0])
         self.assertEqual(len({n['path'] for n in nodes}), 3)
         self.assertEqual(counts['truncated'], 1)
         self.assertTrue(any(d['code'] == 'NATIVE_AX_DUPLICATE_IDENTIFIER' for d in diagnostics))
-        _, counts, _ = o.collect(Fake(), 1, 100, o.rect(0, 0, 1, 1), max_nodes=1)
+        fake = TreeAtspi({1: [2, 3, 5]}, foreign=[5])
+        _, counts, _ = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1), max_nodes=1)
         self.assertEqual(counts['nodes'], 1)
         self.assertEqual(counts['truncated'], 3)
-        _, counts, _ = o.collect(Fake(), 1, 100, o.rect(0, 0, 1, 1), max_depth=0)
+        self.assertEqual(fake.child_fetches, [], 'maxNodes must stop before acquiring child references')
+        fake = TreeAtspi({1: [2, 3, 5]}, foreign=[5])
+        _, counts, _ = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1), max_depth=0)
         self.assertEqual(counts['nodes'], 1)
         self.assertEqual(counts['truncated'], 3)
+        self.assertEqual(fake.child_fetches, [], 'maxDepth must stop before acquiring child references')
+
+    def test_wide_geometryless_tree_stops_at_visited_budget_before_acquisition(self):
+        fake = TreeAtspi({1: list(range(2, 12))}, geometryless=range(1, 12))
+        nodes, counts, diagnostics = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1), max_nodes=1, max_visited=4)
+        self.assertEqual(nodes, [])
+        self.assertEqual(len(fake.child_fetches), 3)
+        self.assertEqual(counts['truncated'], 7)
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
+
+    def test_lazy_cycle_deep_and_foreign_tree_edges_are_bounded(self):
+        cyclic = TreeAtspi({1: [2], 2: [1]})
+        nodes, counts, diagnostics = o.collect(cyclic, 1, 100, o.rect(0, 0, 1, 1))
+        self.assertEqual(counts['nodes'], 2)
+        self.assertEqual(counts['truncated'], 1)
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_CYCLE' for d in diagnostics))
+
+        deep = TreeAtspi({1: [2], 2: [3], 3: [4], 4: []})
+        nodes, counts, diagnostics = o.collect(deep, 1, 100, o.rect(0, 0, 1, 1), max_depth=2)
+        self.assertEqual(counts['nodes'], 3)
+        self.assertEqual(counts['truncated'], 1)
+        self.assertEqual(deep.child_fetches, [(1, 0), (2, 0)])
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_DEPTH_LIMIT' for d in diagnostics))
+
+        foreign = TreeAtspi({1: [2, 3]}, foreign=[2])
+        nodes, counts, diagnostics = o.collect(foreign, 1, 100, o.rect(0, 0, 1, 1))
+        self.assertEqual(counts['nodes'], 2)
+        self.assertEqual(counts['truncated'], 1)
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_FOREIGN_SUBTREE' for d in diagnostics))
+
+    def test_visit_limit_exact_boundary_and_reference_reservation(self):
+        exact = TreeAtspi({1: [2]})
+        _, counts, _ = o.collect(exact, 1, 100, o.rect(0, 0, 1, 1), max_visited=2)
+        self.assertEqual(counts['nodes'], 2)
+        self.assertEqual(counts['truncated'], 0)
+        self.assertEqual(exact.child_fetches, [(1, 0)])
+
+        off_by_one = TreeAtspi({1: [2]})
+        _, counts, diagnostics = o.collect(off_by_one, 1, 100, o.rect(0, 0, 1, 1), max_visited=1)
+        self.assertEqual(counts['nodes'], 1)
+        self.assertEqual(counts['truncated'], 1)
+        self.assertEqual(off_by_one.child_fetches, [])
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
+
+        limited = TreeAtspi({1: [2]})
+        limited.child_at = lambda _obj, _index: (_ for _ in ()).throw(
+            o.Failure('NATIVE_AX_REFERENCE_LIMIT', 'request reference budget exhausted'))
+        _, counts, diagnostics = o.collect(limited, 1, 100, o.rect(0, 0, 1, 1))
+        self.assertEqual(counts['nodes'], 1)
+        self.assertEqual(counts['truncated'], 1)
+        self.assertTrue(any(d['code'] == 'NATIVE_AX_REFERENCE_LIMIT' for d in diagnostics))
+
+        a = object.__new__(o.Atspi)
+        a.refs = []
+        a.visited_used = 0
+        a.visited_limit = 0
+        a.references_used = 0
+        a.references_limit = 2
+        a.call = Mock()
+        with self.assertRaisesRegex(o.Failure, 'visited-node budget') as caught:
+            a.child_at(10, 0)
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_VISIT_LIMIT')
+        a.call.assert_not_called()
+
+        a = object.__new__(o.Atspi)
+        a.refs = []
+        a.visited_used = 1
+        a.visited_limit = 1
+        a.references_used = 0
+        a.references_limit = 2
+        a.unref = Mock()
+        a.call = Mock(return_value=77)
+        self.assertEqual(a.obj('first'), 77)
+        with self.assertRaisesRegex(o.Failure, 'reference budget') as caught:
+            a.obj('must-not-be-called')
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_REFERENCE_LIMIT')
+        self.assertEqual(a.call.call_count, 1, 'reference budget must be checked before the next AT-SPI call')
+        self.assertEqual(a.references_used, 1)
+
+        a.begin_request()
+        self.assertEqual(a.references_used, 0)
+        self.assertEqual(a.visited_used, 0)
+        self.assertEqual(a.refs, [])
+        a.references_limit = 2
+        a.call = Mock(side_effect=[88, 99])
+        self.assertEqual(a.obj('next-request'), 88)
+        self.assertEqual(a.references_used, 1)
+        self.assertEqual(a.obj('reserved-revalidation', critical=True), 99)
+        self.assertEqual(a.references_used, 2)
+        with self.assertRaises(o.Failure):
+            a.obj('after-hard-limit')
+        self.assertEqual(a.call.call_count, 2)
+        a.release()
+        a.unref.assert_any_call(77)
+        a.unref.assert_any_call(88)
+        a.unref.assert_any_call(99)
+        self.assertEqual(a.references_used, 0)
+
+    def test_atspi_children_iterator_does_not_eagerly_acquire(self):
+        a = object.__new__(o.Atspi)
+        a.refs = []
+        a.visited_used = 0
+        a.visited_limit = 10
+        a.references_used = 0
+        a.references_limit = 10
+        a.call = Mock(side_effect=[3, 11, 12, 13])
+        children = a.children(1)
+        self.assertEqual(a.call.call_count, 0)
+        self.assertEqual(next(children), (0, 11))
+        self.assertEqual(a.call.call_count, 2)
+        self.assertEqual(next(children), (1, 12))
+        self.assertEqual(a.call.call_count, 3)
+        self.assertEqual(a.references_used, 2)
+        self.assertEqual(a.visited_used, 2)
+
+        too_wide = object.__new__(o.Atspi)
+        too_wide.refs = []
+        too_wide.visited_used = 0
+        too_wide.visited_limit = 10
+        too_wide.references_used = 0
+        too_wide.references_limit = 10
+        too_wide.call = Mock(return_value=o.MAX_AX_CHILDREN + 1)
+        with self.assertRaises(o.Failure) as caught:
+            list(too_wide.children(1))
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_TRUNCATED')
+        too_wide.call.assert_called_once()
+
+    def test_request_cleanup_runs_when_dispatch_fails(self):
+        agent = o.Agent()
+        agent.a = Mock()
+        with self.assertRaises(o.Failure):
+            agent.dispatch('unsupported', {})
+        agent.a.begin_request.assert_called_once_with()
+        agent.a.release.assert_called_once_with()
+
+    def test_selected_window_identity_outlives_request_ref_cleanup(self):
+        agent = o.Agent()
+        agent.a = Mock()
+        agent.a.gobj = object()
+        agent.x = Mock()
+        agent.x.compositor.return_value = 'compositor-id'
+        agent.sessions['session'] = dict(pid=123, identity='start', selected=None)
+        window = dict(obj=77, windowId='window[x11:77]')
+        with patch.object(agent, 'backend'), patch.object(agent, 'windows', return_value=[window]), \
+                patch.object(o, 'process_identity', return_value='start'), \
+                patch.object(o, 'bind', return_value=lambda obj: obj):
+            agent.dispatch('window.select', dict(sessionId='session', selector=dict(by='window-id', windowId=window['windowId'])))
+        self.assertEqual(agent.sessions['session']['selectedObj'], 77)
+        self.assertEqual(agent.sessions['session']['selected'], window['windowId'])
+        agent.a.release.assert_called_once_with()
+        agent.a.unref.assert_not_called()
+
+    def test_reference_boundary_returns_partial_capture_with_reserved_revalidation(self):
+        tree = BudgetTreeAtspi({77: [78, 79], 78: [], 79: []}, reference_limit=6)
+        agent = o.Agent()
+        agent.a = tree
+        agent.x = Mock()
+        agent.x.capture.return_value = b'png-bytes'
+        window_id = 'window[x11:77]'
+        agent.sessions['session'] = dict(pid=100, identity='start', selected=window_id,
+                                         selectedObj=77, compositor='existing-compositor')
+        window = dict(obj=77, pid=100, rect=o.rect(-90, 25, 20, 10), index=0,
+                      title='', states={}, xid=77, windowId=window_id)
+        with tempfile.TemporaryDirectory() as base:
+            tree_path = str(Path(base) / 'tree' / 'a11y.json')
+            png_path = str(Path(base) / 'frames' / 'frame.png')
+            params = dict(sessionId='session', windowId=window_id,
+                          outputTreePath=tree_path, outputPngPath=png_path)
+            with patch.object(agent, 'backend'), patch.object(agent, 'windows', return_value=[window]), \
+                    patch.object(o, 'process_identity', return_value='start'):
+                result = agent.dispatch('snapshot.capture', params)
+            saved_tree = json.loads(Path(tree_path).read_text())
+            self.assertEqual(result['counts']['nodes'], 2)
+            self.assertEqual(result['counts']['truncated'], 1)
+            self.assertIn('NATIVE_AX_REFERENCE_LIMIT', [d['code'] for d in result['diagnostics']])
+            self.assertEqual(len(saved_tree['nodes']), 2)
+            self.assertEqual(Path(png_path).read_bytes(), b'png-bytes')
+            agent.x.capture.assert_called_once()
+            self.assertEqual(tree.unref.call_count, 4, 'each returned request-owned ref must be released once')
+            self.assertEqual(tree.refs, [])
+            self.assertEqual(tree.references_used, 0)
 
     def test_session_identity_cleanup_on_eof(self):
         from unittest.mock import Mock
