@@ -20,12 +20,19 @@ Related: [gpui-conformanceの責務](https://github.com/gpui-mbt/gpui-conformanc
 4. retained PNGの比較、native process内部の状態、外部observer、実入力は別の証拠層。スクリーンショット取得成功をクリック・IME・accessibility成功へ昇格させない。
 5. 決定的なgeometry・state・event・pixel検査を主判定にし、VLMの診断は補助にする。通常の回帰検証を有料API key必須にしない。
 
+### 既存検証レーンとの対応（2026-10-15）
+
+[補足コメント](https://github.com/f4ah6o/vlmkit/pull/11#issuecomment-6189662913)の時点では、[macOS/native actions PR #2](https://github.com/f4ah6o/vlmkit/pull/2)の実GPUI/gpui.mbt app acceptanceと直近source修正の再実行は未完了である。[Linux X11/GTK PR #7](https://github.com/f4ah6o/vlmkit/pull/7)は別レーンで、source `4893663a6fc7b76b2f0c4a613db7fb8e4f5b96ce`のowner-run fixtureで9 assertionsが成功した一方、opt-in TypeScript client-to-judge live testはskipと報告されている。後続HEADへこの結果を流用しない。
+
+Linuxの先行admissionはUbuntu 24.04 / Xvfb / xcompmgr / GTK3 / scale-1のprofileに限定する。physical input、Wayland/XWayland、GPUI/MZed、他WM/toolkit/profileのqualificationへ一般化しない。本課題はPR #2/#7の実装を再作成せず、既存の安全性修正を取り込んだ候補を固定して、client-to-judge live pathと対象windowに束縛した実アプリ受入を別々に検証する。
+
 ## 3. 実装単位
 
 1. **profileと能力表**：browser、macOS Apple Silicon、Linux X11、Linux Wayland、Windowsを混同しない。各profileでcapture・observation・input・AX等のimplemented/verified/unsupportedを記録する。未提供profileは未対応と明示する。
 2. **対象束縛と安全性**：session/run ID、PID／process起動identity、window ID、capture geometry、scaleを関連付ける。観測時と入力直前にidentityを再検証する。対象が曖昧・消失・置換されたら入力を拒否し、別windowへのfallbackをしない。
 3. **GUI scenario adapter**：fixture ID、許可操作、期待する状態変化、deadline、artifact出力先を受ける薄いadapterを追加する。既存profileの能力を超える操作は事前に拒否し、理由と未検証状態を返す。
 4. **証拠export**：実行したコマンド・候補SHA・tool version・OS/arch・観測層・時刻・window identity・操作log・画像／AXの取得条件・hashを保存する。gpui-conformanceやYami-kumoのfixture IDへ関連付ける。既存schemaを変更する場合はversionを付ける。
+5. **既存実装のlive受入**：まずopt-in TypeScript client-to-judgeを実processへ接続し、mockやskipでない往復を記録する。次に安全条件を満たすprofileで専用GPUI/gpui.mbtアプリまたはMZed islandを起動し、対象window・アプリSHA・observer/client SHA・before/action/afterを同じrunへ結び付ける。GTK fixture、client接続、実アプリ、物理入力の結果を別項目で報告する。
 
 ## 4. 入力とユーザー画面を守る条件
 
@@ -46,12 +53,14 @@ Related: [gpui-conformanceの責務](https://github.com/gpui-mbt/gpui-conformanc
 | Wayland等で必要能力がない | unsupported/unverified相当を明示し、X11の成功を流用しない |
 | 故意のUI崩れ／無効化された操作 | 決定的検査で検出する。VLMの文面だけでPASSにしない |
 | timeout／artifact欠損 | 完了・成功にせず、自分のfixtureだけをcleanupする |
+| client-to-judge live path | 固定したclientと実judge processの往復を記録し、skip/mockを成功に数えない |
+| GPUI/MZed app acceptance | 対象windowと実アプリの候補SHAに結び付いた証拠を取得し、GTK fixture成功で代用しない |
 
-上表は今後の受入テストであり、この文書追加で実行済みではない。既存のnative安全性課題を先に完了し、能力が未確認のprofileへ入力テストを広げない。
+上表は今後の受入テストであり、この文書追加で実行済みではない。既存のnative安全性課題を先に完了し、能力が未確認のprofileへ入力テストを広げない。clientのlive接続成功も、それだけでは物理入力や他のアプリ/profileのqualificationを意味しない。
 
 ## 6. 開発・検証
 
-[AGENTS.md](../../AGENTS.md)と[project conventions](../../.claude/CLAUDE.md)を維持する。source変更後は`pnpm build`を行い、依存toolchainを準備してテストする。keyなしの経路は`env -u OPENROUTER_API_KEY pnpm test`で検証し、実行したコマンドとPASS/FAIL/未実行を分ける。nativeは各observer READMEのprofile固有手順を使う。今回のMarkdown追加ではbuild・test・native操作は未実行。
+[AGENTS.md](../../AGENTS.md)と[project conventions](../../.claude/CLAUDE.md)を維持する。source変更後は`pnpm build`を行い、依存toolchainを準備してテストする。keyなしの経路は`env -u OPENROUTER_API_KEY pnpm test`で検証し、実行したコマンドとPASS/FAIL/未実行を分ける。nativeは各observer READMEのprofile固有手順を使う。ローカル実行とCI内の実行を分け、実際のjob/step・候補SHA・artifactを記録する。文書PRのCI成功を新しいGUI受入の完了と扱わず、CIで実行したテストまで未実行に読み替えない。
 
 ## 7. マージ基準・完了条件
 
@@ -61,3 +70,4 @@ Related: [gpui-conformanceの責務](https://github.com/gpui-mbt/gpui-conformanc
 2. [ ] 対象window束縛の正常系と誤配信防止の反例を自動検証できる。
 3. [ ] profileごとの未対応／未検証を維持した証拠を他repoへ渡せる。
 4. [ ] gpui-conformanceまたはYami-kumoの実fixtureで往復を1件確認する。
+5. [ ] client-to-judge live testと、対象windowに束縛したGPUI/gpui.mbtまたはMZed app acceptanceを別々に証拠化する。
