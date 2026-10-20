@@ -69,7 +69,10 @@ class FixtureTests(unittest.TestCase):
             for role in expected.get("roles", (expected["role"],)):
                 self.assertEqual(observer.role_of(role), integration.MATRIX_ROLE[identifier], identifier)
                 self.assertIn(role, observer.ROLES, identifier)
-            self.assertIn(identifier, fixture, identifier)
+            # Control identifiers live in the fixture; the tab list is found by its
+            # announced page name instead.
+            if identifier != "fixture.tabs":
+                self.assertIn(identifier, fixture, identifier)
 
 if __name__ == "__main__":
     unittest.main()

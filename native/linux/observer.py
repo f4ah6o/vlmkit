@@ -73,7 +73,8 @@ ROLES = {'push button': 'button', 'toggle button': 'button', 'entry': 'textfield
          'password text': 'textfield', 'check box': 'checkbox', 'radio button': 'radio',
          'page tab': 'tab', 'menu item': 'menuitem', 'combo box': 'combobox',
          'label': 'text', 'static': 'text', 'panel': 'group', 'list item': 'listitem',
-         'scroll pane': 'scrollview', 'frame': 'window', 'image': 'image'}
+         'scroll pane': 'scrollview', 'frame': 'window', 'image': 'image',
+         'page tab list': 'group', 'table': 'list', 'scroll bar': 'scrollview'}
 
 # `states` is a closed set in `vlmkit-a11y/1`; toolkit values outside it stay out.
 STATE_KEYS = ('focused', 'checked', 'selected', 'expanded', 'hidden', 'disabled')

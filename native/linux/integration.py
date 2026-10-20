@@ -36,7 +36,9 @@ MATRIX = {
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
     'fixture.tab.one': dict(role='page tab', name='One'),
-    'fixture.tab.two': dict(role='page tab', name='Two'),
+    # The notebook announces its current page on the tab list; the tab itself
+    # carries its `selected` state, and the pages their names.
+    'fixture.tabs': dict(role='page tab list', name='Two'),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
@@ -50,7 +52,6 @@ observer_role = {
     'combo box': 'combobox', 'toggle button': 'button', 'label': 'text', 'image': 'image',
 }
 
-# The normalized role expected for a matrix control, from its accepted names.
 # Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
 # only by its accessible name is announced as `text`, even when the fixture names
 # its ATK role (`Atk.Role.ENTRY`), and a hidden entry is `password text` or
@@ -59,12 +60,14 @@ observer_role = {
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
+    'fixture.tabs': ('page tab list',),
 }
 
+# The normalized role expected for a matrix control, from its accepted names.
 MATRIX_ROLE = {
     'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
     'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
-    'fixture.mode.b': 'radio', 'fixture.tab.one': 'tab', 'fixture.tab.two': 'tab',
+    'fixture.mode.b': 'radio', 'fixture.tab.one': 'tab', 'fixture.tabs': 'group',
     'fixture.choice': 'combobox', 'fixture.disabled': 'button', 'fixture.color': 'image',
 }
 # Controls a tree can lose without losing the test: the combo box's popup and a
@@ -183,6 +186,12 @@ def by_identifier(tree):
         if identifier:
             assert identifier not in found, ('A matrix control identifier is duplicated', identifier, node['path'])
             found[identifier] = node
+    # A notebook's tab list carries the current page's name and no identifier of
+    # the notebook's own; it is looked up by that name, recorded by its path.
+    for node in tree['nodes']:
+        if node.get('platformRole') == 'page tab list' and (node.get('name') or '').strip():
+            found.setdefault('fixture.tabs', node)
+            break
     return found
 
 

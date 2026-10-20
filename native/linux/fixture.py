@@ -133,8 +133,10 @@ def matrix_window(title, x, y):
 
     # One accessible name per string, so a name the tree reports identifies one
     # control: the pages are "First page"/"Second page", the tabs "One"/"Two".
+    # The notebook's accessible is its tab list: it announces the current page.
     notebook = Gtk.Notebook()
     identify(notebook, 'Pages', 'fixture.pages')
+    notebook.set_tab_pos(Gtk.PositionType.TOP)
     notebook.set_size_request(320, 120)
     for label, identifier, text in (('One', 'fixture.tab.one', 'First page'),
                                     ('Two', 'fixture.tab.two', 'Second page')):
@@ -153,6 +155,10 @@ def matrix_window(title, x, y):
     combo.set_active(0)
     combo.set_size_request(140, 30)
     fixed.put(combo, 200, 200)
+    # An open popup is its own top-level window and would make two same-PID
+    # surfaces; this profile is about one window's semantics.
+    if hasattr(combo, 'get_popup'):
+        combo.get_popup().unmap()
 
     scrolling = Gtk.ScrolledWindow()
     scrolling.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)

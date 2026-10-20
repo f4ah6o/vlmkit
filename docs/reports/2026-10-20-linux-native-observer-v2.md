@@ -18,9 +18,26 @@ toolkit-independent coordinates, and no row below claims a profile it did not ob
 | Python pure suite (`native/linux/test_*.py`) | **PASS**, 35 tests, 2 skipped | run in this sandbox: `python3 -m unittest discover -s native/linux -p 'test_*.py'` |
 | Fixture import smoke (base + matrix) | **SKIPPED** here, **UNRUN** hosted | GTK needs a display; the two skips are this test, which says so |
 | `linux-agent.test.ts` + `native-agent.test.ts` (vitest transport lane) | **UNRUN** | `node_modules` is absent in this sandbox and `pnpm`/`vp` cannot install (`EROFS` on the package-manager cache); the source was read, not executed |
-| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **FAIL** on this source, [run 39357942889](https://github.com/f4ah6o/vlmkit/actions/runs/39357942889) | the matrix stopped at `('fixture.name', 'platform role', 'text', 'entry')`: GTK3 reports a GtkEntry labelled by its accessible name alone as role `text`. The matrix now accepts both names for that control; re-run pending |
-| Semantics-matrix live assertions | **FAIL → re-run pending** | [39359119107](https://github.com/f4ah6o/vlmkit/actions/runs/39359119107) still announced `fixture.name` as `text` even with `Atk.Role.ENTRY` named; an accepted alternative name is now recorded as announced rather than required to normalize to the recorded role |
+| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **in progress** | runs 39357942889 → 39359445974 fixed one real finding per run (below); the latest run is pending |
+| Semantics-matrix live assertions | **FAIL → re-run pending** | see "Hosted runs" below |
 | Recorded fixture findings (`fixtures/native/linux/matrix`) | expectations re-derived by an ad-hoc port of the judge's two rules; the vitest assertion is **UNRUN** | the port matched `expected.json` (unlabelled `window[0]>button[3]`, unreachable `window[0]>text[1]`, no small targets) |
+
+### Hosted runs
+
+Each run on this branch was read from its log and, where an artifact was retained, from
+the artifact itself:
+
+| run | result | what it found | change |
+|---|---|---|---|
+| [39357777170](https://github.com/f4ah6o/vlmkit/actions/runs/39357777170) | transport FAIL | the fake observer could not answer `ok:false` overrides, so the partial-code regression hit `snapshot.capture` | fake agent honours `{error}` overrides |
+| [39357942889](https://github.com/f4ah6o/vlmkit/actions/runs/39357942889) | observer FAIL | `fixture.name` is announced as platform role `text`, not `entry` | accepted names per control |
+| [39358995057](https://github.com/f4ah6o/vlmkit/actions/runs/39358995057) | observer FAIL | naming `Atk.Role.ENTRY` did not change the announcement; `role` still normalized to `text` | an accepted alternative is recorded as announced |
+| [39359119107](https://github.com/f4ah6o/vlmkit/actions/runs/39359119107) | observer FAIL | `fixture.tab.one` missing: the notebook announces the current page on its `page tab list`, the tab carries the `selected` state | the matrix asserts the tab list by its page name; the tab by its state |
+| [39359445974](https://github.com/f4ah6o/vlmkit/actions/runs/39359445974) | observer FAIL, transport PASS | the same tab finding was then re-asserted by the normalized-role guard | tab found by announced page name, `page tab list` mapped to `group` |
+
+The retained artifact of 39359445974 was read to make the last two rows: the base
+profile's tree (7 nodes, identifier/actions/`disabled` present, no entry text) is the
+shape the generic judge already consumes.
 
 A skipped lane is not a pass. The previous round's hosted PASS
 (`docs/reports/2026-10-05-linux-native-observer.md`) remains evidence for the code at
