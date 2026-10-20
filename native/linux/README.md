@@ -55,16 +55,20 @@ typelib is required.
 - Names, toolkit-exposed accessible IDs, roles, states and native action names
   are observed. Action names have an `atspi:` prefix; controls do not receive
   synthetic `tap` actions.
-- **Values are not collected for text entry.** An entry's text is content, and a
+- **Values are numeric and never text.** An entry's text is content and a
   `password text` node is never read, so entry text and passwords never reach the
-  artifact. A non-entry control whose value is a deterministic scalar (a slider,
-  a progress bar) may report `value`, bounded to 256 characters; complex layouts
-  are omitted rather than serialized.
+  artifact; GTK3 can announce a labelled entry as `text`, so the text roles are
+  excluded too. A control whose AT-SPI value is a finite number (a slider, a
+  progress bar, a spin button, a scroll bar) reports that number as `value`;
+  other roles are not probed, because the value interface costs a request
+  reference. The number is `atspi_value_get_current_value`, not the interface
+  pointer: the previous reader treated the pointer as the value and could write
+  a memory address into the tree.
 - Accessibility association is all-or-nothing **and says why**: an X11 client
   that AT-SPI does not see (no toolkit bridge) or does not match by exact geometry
-  fails with `NATIVE_AX_PARTIAL`, with the X11/AT-SPI window counts on the
-  session, never as `NATIVE_WINDOW_NOT_FOUND` ("the app has no window") and never
-  as an empty tree.
+  fails with `NATIVE_AX_PARTIAL`, with the X11/AT-SPI window counts in the
+  error's `details` (and on the session), never as `NATIVE_WINDOW_NOT_FOUND`
+  ("the app has no window") and never as an empty tree.
 - A target that exits between selection and capture is `NATIVE_TARGET_EXITED`;
   `NATIVE_WINDOW_CHANGED` is reserved for an X11/AT-SPI identity or geometry
   change on a live target.
@@ -92,14 +96,21 @@ windows and produces two profiles, each with a tree, PNG and machine-readable re
 - **base** (`fixture.py`): real stable IDs, duplicate-title surfaces, ambiguous
   windows refused without an explicit selector, client-local semantic rectangles
   against known red pixels, a foreign green occluder that must not appear in the
-  selected window image, a bounded/truncated capture, entry text never collected,
-  and `NATIVE_TARGET_EXITED` after the target ends.
+  selected window image, a slider's numeric value (`fixture.level`, `4`), a
+  bounded/truncated capture, entry text never collected, and
+  `NATIVE_TARGET_EXITED` after the target ends.
 - **matrix** (`fixture.py --matrix`): one window holding a named button, an
   unnamed button, an entry, a password entry, a check button, a toggle button,
-  radio buttons, two notebook tabs, a combo box, a scrolled list, a disabled
-  button and an image. Every identifier's announced role, name, states and native
-  action names are asserted, and the entry/password text must not appear anywhere
-  in the artifact.
+  radio buttons, a notebook (its tab list keeps `fixture.pages`/`Pages`, one
+  selected tab and that tab's selected page label), a combo box, a scrolled list,
+  a disabled button and an image. Every identifier's announced role, name, states
+  and native action names are asserted, and the entry/password text must not
+  appear anywhere in the artifact.
+
+The fixture import smoke (`test_fixture.py`) builds both fixtures in a child
+process without entering `Gtk.main()`, so a fixture that stops building fails the
+pure suite instead of timing out; a host without a display skips it, and the live
+lane remains the evidence for the fixture's GTK behavior.
 
 The fixture's setup/teardown launches and terminates only its own test processes;
 the observer never does so.
@@ -120,4 +131,8 @@ for exact versions, tests and retained artifact. The later bounded-traversal and
 semantics-matrix work, and which of its checks have been observed on a hosted
 runner rather than only run as pure tests, is recorded in
 [2026-10-20-linux-native-observer-v2](../../docs/reports/2026-10-20-linux-native-observer-v2.md).
+The follow-up review that fixed value reading (an interface pointer could become
+`value`), the double visit charge and the fixture notebook's own identity is
+[2026-10-20-linux-observer-review](../../docs/reports/2026-10-20-linux-observer-review.md);
+its hosted lane result is still pending, so none of it is acceptance evidence yet.
 Neither is a general desktop, Wayland, GPUI/MZed or physical-input support claim.

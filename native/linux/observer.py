@@ -27,13 +27,17 @@ I = C.c_int
 
 
 class Failure(Exception):
-    def __init__(self, code, message):
+    """A protocol error. `details` carries machine-readable evidence when the
+    message alone would lose it (the caller can retry on a code, not on prose)."""
+
+    def __init__(self, code, message, details=None):
         super().__init__(message)
         self.code = code
+        self.details = details
 
 
-def fail(code, message):
-    raise Failure(code, message)
+def fail(code, message, details=None):
+    raise Failure(code, message, details)
 
 
 def bind(lib, name, result, *args):
@@ -72,32 +76,51 @@ def rect(x, y, w, h):
 ROLES = {'push button': 'button', 'toggle button': 'button', 'entry': 'textfield',
          'password text': 'textfield', 'check box': 'checkbox', 'radio button': 'radio',
          'page tab': 'tab', 'menu item': 'menuitem', 'combo box': 'combobox',
-         'label': 'text', 'static': 'text', 'panel': 'group', 'list item': 'listitem',
-         'scroll pane': 'scrollview', 'frame': 'window', 'image': 'image',
-         'page tab list': 'group', 'table': 'list', 'scroll bar': 'scrollview'}
+         'label': 'text', 'static': 'text', 'text': 'text', 'panel': 'group',
+         'list item': 'listitem', 'scroll pane': 'scrollview', 'frame': 'window',
+         'image': 'image', 'page tab list': 'group', 'table': 'list',
+         'scroll bar': 'scrollview'}
 
 # `states` is a closed set in `vlmkit-a11y/1`; toolkit values outside it stay out.
 STATE_KEYS = ('focused', 'checked', 'selected', 'expanded', 'hidden', 'disabled')
 
-# AT-SPI roles whose value is typed content (an entry's text), which this profile
-# never collects; `password text` must never be read at all.
-TEXT_CONTENT_ROLES = ('entry', 'password text')
+# AT-SPI roles whose value is typed text, which this profile never collects.
+# GTK3 announces a labelled `GtkEntry` as `text`, so the rule has to name the
+# text roles too, not only the entry roles: the role string is the toolkit's.
+TEXT_CONTENT_ROLES = ('entry', 'password text', 'text', 'label', 'static')
+
+# Roles whose AT-SPI value is a deterministic scalar this profile reports. A
+# role outside this set is not probed: `accessible_get_value_iface` costs a
+# request reference and a remote call per node, and most roles have no value.
+VALUE_ROLES = ('slider', 'progress bar', 'spin button', 'scroll bar', 'dial')
 
 # Deterministic value bound: a huge scroll offset is a state, not content.
 VALUE_TEXT_LIMIT = 256
 
-# These are request-local hard limits. `maxNodes` remains the public emitted-node
-# limit; a second visited limit also charges geometry-less and foreign nodes, and
-# the reference limit bounds AT-SPI objects retained while the request runs.
+# Request-local limits. `maxNodes` remains the public emitted-node limit; the
+# visit limit bounds every entered node (including geometry-less and foreign
+# ones), and the reference limit bounds AT-SPI objects retained by a request.
 MAX_AX_VISITED = 20000
 MAX_AX_REFERENCES = 50000
 HARD_BUDGET_CODES = ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT')
 MAX_AX_CHILDREN = 10000
+MAX_ACTIONS = 128
 AX_REVALIDATION_REFERENCE_RESERVE = 1
 # The public traversal default; the agent clamps it to [0, 128].
 DEFAULT_MAX_DEPTH = 64
 DEFAULT_MAX_NODES = 10000
 MAX_DEPTH = 128
+# AT-SPI request and call deadlines (milliseconds for libatspi, seconds here).
+AX_REQUEST_SECONDS = 15
+AX_CALL_TIMEOUT_MS = 1000
+# One NDJSON request line, so a malformed stream cannot grow without bound.
+MAX_REQUEST_BYTES = 65536
+# X11 enumeration and capture bounds; a window larger than these is refused
+# rather than allocated.
+MAX_X11_WINDOWS = 10000
+MAX_X11_DEPTH = 32
+MAX_WINDOW_SIDE = 8192
+MAX_WINDOW_PIXELS = 16777216
 
 
 def role_of(platform_role):
@@ -105,21 +128,20 @@ def role_of(platform_role):
     return ROLES.get(platform_role, platform_role) or 'unknown'
 
 
-def scalar_value(raw):
-    """AT-SPI value -> string for a deterministic scalar layout, else None.
+def numeric_text(raw):
+    """AT-SPI gdouble -> deterministic text, or None when it is not finite.
 
-    Layouts whose value is complex (text with runs, relations) are omitted rather
-    than serialized, matching the macOS collector's rule for complex AX values.
+    AT-SPI's value interface exposes a `gdouble` (`atspi_value_get_current_value`).
+    Integers are written without a trailing `.0`; non-integral doubles use their
+    shortest round-trip representation, which is deterministic across runs.
     """
-    if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         return None
-    if isinstance(raw, str):
-        return raw
-    if isinstance(raw, int):
-        return str(raw)
-    if math.isfinite(raw):
-        return format(raw, '.17g')
-    return None
+    if isinstance(raw, float):
+        if not math.isfinite(raw):
+            return None
+        return str(int(raw)) if raw.is_integer() else repr(raw)
+    return str(raw)
 
 
 def associated_pids(accessibles, windows):
@@ -203,8 +225,8 @@ class Atspi:
         self.fns = {}
         if bind(self.lib, 'atspi_init', I)() != 0:
             fail('NATIVE_ACCESSIBILITY_UNAVAILABLE', 'AT-SPI initialization failed')
-        bind(self.lib, 'atspi_set_timeout', None, I, I)(1000, 1000)
-        self.deadline = time.monotonic() + 15
+        bind(self.lib, 'atspi_set_timeout', None, I, I)(AX_CALL_TIMEOUT_MS, AX_CALL_TIMEOUT_MS)
+        self.deadline = time.monotonic() + AX_REQUEST_SECONDS
         self.visited_used = 0
         self.visited_limit = MAX_AX_VISITED
         self.references_used = 0
@@ -214,7 +236,7 @@ class Atspi:
         # The selected-window identity is separately held by Agent with a
         # dedicated g_object_ref. Everything in `refs` belongs to one request.
         self.release()
-        self.deadline = time.monotonic() + 15
+        self.deadline = time.monotonic() + AX_REQUEST_SECONDS
 
     def reserve_reference(self, critical=False):
         # Keep one slot inside the same hard request cap for the mandatory
@@ -235,7 +257,7 @@ class Atspi:
 
     def call(self, name, obj=None, args=(), types=(), result=P, error=True):
         if time.monotonic() > self.deadline:
-            fail('NATIVE_AX_TIMEOUT', 'AT-SPI operation exceeded 15 seconds')
+            fail('NATIVE_AX_TIMEOUT', f'AT-SPI operation exceeded {AX_REQUEST_SECONDS} seconds')
         full = 'atspi_' + name
         signature = ((P,) if obj is not None else ()) + tuple(types) + ((C.POINTER(P),) if error else ())
         key = (full, signature, result)
@@ -306,21 +328,28 @@ class Atspi:
         return self.text('accessible_get_name', obj)
 
     def value(self, obj, platform_role):
-        """The control's value, when AT-SPI exposes a deterministic scalar layout.
+        """The control's current numeric value, when AT-SPI exposes one.
 
-        Text entry is out of the observation profile: an entry's text is content,
-        and a `password text` node's value must never be collected.
+        `atspi_accessible_get_value_iface` returns an `AtspiValue*`, **not** a
+        scalar: reading it as one used to write the interface pointer into the
+        tree. The current value is the interface's `gdouble`, and the interface
+        takes no `GError`. Text content is out of the profile entirely: an
+        entry's text is content, and a `password text` node's text must never be
+        read.
         """
-        if platform_role in TEXT_CONTENT_ROLES:
+        if platform_role in TEXT_CONTENT_ROLES or platform_role not in VALUE_ROLES:
             return None
         try:
-            raw = self.call('accessible_get_value', obj)
+            value_iface = self.obj('accessible_get_value_iface', obj, error=False)
+            if not value_iface:
+                return None
+            current = self.call('value_get_current_value', value_iface, result=C.c_double)
         except Failure:
             return None
-        value = scalar_value(raw)
-        if value is None or len(value) > VALUE_TEXT_LIMIT:
+        text = numeric_text(current)
+        if text is None or len(text) > VALUE_TEXT_LIMIT:
             return None
-        return value
+        return text
 
     def _state_set(self, obj):
         """AT-SPI state set -> the closed `vlmkit-a11y/1` state vocabulary."""
@@ -499,7 +528,7 @@ class X11:
         root, parent, data, count = U(), U(), P(), C.c_uint()
         ok = self.fn('XQueryTree', I, U, C.POINTER(U), C.POINTER(U), C.POINTER(P), C.POINTER(C.c_uint))(xid, C.byref(root), C.byref(parent), C.byref(data), C.byref(count))
         self.sync()
-        if not ok or count.value > 10000:
+        if not ok or count.value > MAX_X11_WINDOWS:
             fail('NATIVE_WINDOW_CHANGED', 'Cannot enumerate bounded X11 window tree')
         try:
             return list(C.cast(data, C.POINTER(U))[:count.value]) if data else []
@@ -529,7 +558,7 @@ class X11:
         x, y, child = I(), I(), U()
         ok = self.fn('XTranslateCoordinates', I, U, U, I, I, C.POINTER(I), C.POINTER(I), C.POINTER(U))(xid, self.root, 0, 0, C.byref(x), C.byref(y), C.byref(child))
         self.sync()
-        if not ok or not 0 < a.width <= 8192 or not 0 < a.height <= 8192 or a.width * a.height > 16777216:
+        if not ok or not 0 < a.width <= MAX_WINDOW_SIDE or not 0 < a.height <= MAX_WINDOW_SIDE or a.width * a.height > MAX_WINDOW_PIXELS:
             return None
         return rect(x.value, y.value, a.width, a.height)
 
@@ -538,7 +567,7 @@ class X11:
         while stack:
             xid, depth = stack.pop()
             count += 1
-            if count > 10000 or depth > 32:
+            if count > MAX_X11_WINDOWS or depth > MAX_X11_DEPTH:
                 fail('NATIVE_WINDOW_AMBIGUOUS', 'X11 enumeration bound exceeded')
             if xid != self.root and self.pid(xid) == pid:
                 bounds = self.geometry(xid)
@@ -552,7 +581,7 @@ class X11:
         while stack:
             child = stack.pop()
             count += 1
-            if count > 10000:
+            if count > MAX_X11_WINDOWS:
                 fail('NATIVE_WINDOW_AMBIGUOUS', 'X11 descendant bound exceeded')
             owner = self.pid(child)
             if owner is not None and owner != pid:
@@ -667,6 +696,11 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
             raise error
         errors += 1
 
+    def release(obj):
+        # Only test doubles may lack `release_obj`; the real Atspi always has it.
+        if hasattr(a, 'release_obj'):
+            a.release_obj(obj)
+
     while stack:
         frame = stack[-1]
         obj, depth = frame['obj'], frame['depth']
@@ -676,16 +710,19 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
             if visited >= max_visited:
                 truncated += 1
                 diagnostics.append(dict(code='NATIVE_AX_VISIT_LIMIT'))
-                if obj != root and hasattr(a, 'release_obj'):
-                    a.release_obj(obj)
+                if obj != root:
+                    release(obj)
                 stack.pop()
                 continue
+            # One visit per entered node: the root and each child. The old
+            # pre-acquisition charge stayed behind when the root started being
+            # charged here, so every child cost two visits and the documented
+            # 20,000-node budget admitted half as many.
             visited += 1
             if obj in seen:
                 diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
                 truncated += 1
-                if hasattr(a, 'release_obj'):
-                    a.release_obj(obj)
+                release(obj)
                 stack.pop()
                 continue
             seen.add(obj)
@@ -696,7 +733,7 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
                     stack.pop()
                     continue
                 platform_role = a.text('accessible_get_role_name', obj)
-                role = ROLES.get(platform_role, platform_role) or 'unknown'
+                role = role_of(platform_role)
                 # role is data, never structural path syntax.
                 segment = re.sub(r'[^A-Za-z0-9_-]', '_', role) + f'[{frame["ordinal"]}]'
                 path = frame['parent'] + '>' + segment if frame['parent'] else segment
@@ -740,7 +777,7 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
                         action = a.obj('accessible_get_action_iface', obj, error=False)
                         if action:
                             n = a.call('action_get_n_actions', action, result=I)
-                            if not 0 <= n <= 128:
+                            if not 0 <= n <= MAX_ACTIONS:
                                 raise Failure('NATIVE_AX_TRUNCATED', 'Action count exceeds bound')
                             actions = []
                             for index in range(n):
@@ -791,8 +828,6 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
             continue
 
         index = frame['next_index']
-        # Charge the visit budget before making the remote reference call.
-        visited += 1
         try:
             child = a.child_at(obj, index)
         except Failure as error:
@@ -807,8 +842,7 @@ def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT
             if child in seen:
                 diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
                 truncated += 1
-                if hasattr(a, 'release_obj'):
-                    a.release_obj(child)
+                release(child)
                 continue
             stack.append(dict(obj=child, depth=depth + 1, ordinal=index, parent=frame['path'],
                               entered=False, child_count=None, next_index=0, path=''))
@@ -853,7 +887,7 @@ class Agent:
         self.x.compositor()
         if self.a is None:
             self.a = Atspi()
-        self.a.deadline = time.monotonic() + 15
+        self.a.deadline = time.monotonic() + AX_REQUEST_SECONDS
 
     def doctor(self):
         checks = []
@@ -888,23 +922,24 @@ class Agent:
         accessibles, apps = self.a.windows(session['pid'])
         clients = self.x.windows(session['pid'])
         partial = association_failure(accessibles, clients)
+        evidence = dict(x11Windows=len(clients), atspiWindows=len(accessibles), atspiApps=apps)
         if partial:
             # Keep the partial-association evidence on the session so a caller
             # that retries (a toolkit bridge that is still starting) can report
             # *why*, instead of reading an empty list as "the app has no window".
-            session['diagnostics'] = [dict(code=partial.code, message=str(partial),
-                                           x11Windows=len(clients), atspiWindows=len(accessibles), atspiApps=apps)]
+            session['diagnostics'] = [dict(code=partial.code, message=str(partial), **evidence)]
         linked = associate(accessibles, clients)
         if not linked:
-            fail(partial.code if partial else 'NATIVE_WINDOW_NOT_FOUND',
-                 str(partial) if partial else 'No uniquely associated AT-SPI/X11 client window')
+            # The counts travel with the error as `details`, so the caller does
+            # not have to parse the message (or a session it cannot see).
+            raise Failure(partial.code if partial else 'NATIVE_WINDOW_NOT_FOUND',
+                          str(partial) if partial else 'No uniquely associated AT-SPI/X11 client window',
+                          details=evidence)
         session.pop('diagnostics', None)
         return [dict(w, windowId='window[x11:' + str(w['xid']) + ']', axPath=f'window[{w["index"]}]',
                      frameGlobalPoints=w['rect'], focused=w['states'].get('focused', False),
-                     main=False, minimized=False, onScreen=True, screenCaptureWindowId=w['xid'], frameKind='client-window') for w in linked]
-        return [dict(w, windowId='window[x11:' + str(w['xid']) + ']', axPath=f'window[{w["index"]}]',
-                     frameGlobalPoints=w['rect'], focused=w['states'].get('focused', False),
-                     main=False, minimized=False, onScreen=True, screenCaptureWindowId=w['xid'], frameKind='client-window') for w in linked]
+                     main=False, minimized=False, onScreen=True, screenCaptureWindowId=w['xid'],
+                     frameKind='client-window') for w in linked]
 
     @staticmethod
     def public(w):
@@ -955,13 +990,12 @@ class Agent:
             return [self.public(w) for w in windows]
         if method == 'window.select':
             w = choose(windows, params.get('selector'))
-            session_diagnostics = s.pop('diagnostics', None) or []
             s['compositor'] = self.x.compositor()
             if s.get('selectedObj'):
                 self.a.unref(s['selectedObj'])
             s['selectedObj'] = bind(self.a.gobj, 'g_object_ref', P, P)(w['obj'])
             s['selected'] = w['windowId']
-            return dict(self.public(w), diagnostics=session_diagnostics)
+            return self.public(w)
         if params.get('windowId') != s['selected'] or not s['selected']:
             fail('NATIVE_WINDOW_NOT_SELECTED', 'Capture requires the explicitly selected session window')
         w = choose(windows, dict(by='window-id', windowId=s['selected']))
@@ -1002,31 +1036,44 @@ class Agent:
                     transform=dict(globalWindowOriginPoints=dict(x=w['rect']['left'], y=w['rect']['top']), logicalToPixelScale=1))
 
 
+def handle_request(agent, line):
+    """Parse one NDJSON request and return its response envelope.
+
+    Separated from the read loop so the protocol envelope (including an
+    optional `details`) is testable without a child process.
+    """
+    request_id = None
+    try:
+        if len(line) > MAX_REQUEST_BYTES:
+            fail('NATIVE_INVALID_PARAMS', f'Request exceeds {MAX_REQUEST_BYTES} bytes')
+        req = json.loads(line)
+        if not isinstance(req, dict):
+            fail('NATIVE_INVALID_PARAMS', 'Request must be an object')
+        request_id = req.get('id')
+        if type(request_id) is not int or request_id < 0:
+            fail('NATIVE_INVALID_PARAMS', 'Request ID must be a nonnegative integer')
+        if req.get('protocol') != 1:
+            fail('NATIVE_PROTOCOL_MISMATCH', 'Expected protocol 1')
+        if not isinstance(req.get('params', {}), dict) or not isinstance(req.get('method'), str):
+            fail('NATIVE_INVALID_PARAMS', 'Invalid method or params')
+        return dict(id=request_id, ok=True, result=agent.dispatch(req['method'], req.get('params', {})))
+    except Exception as e:
+        # dispatch() owns per-request reference cleanup; this loop only turns
+        # the failure into a protocol response. `details` is optional
+        # machine-readable evidence (e.g. window counts): the transport already
+        # carries it, so a retry can be justified.
+        error = dict(code=getattr(e, 'code', 'NATIVE_INTERNAL_ERROR'), message=str(e))
+        details = getattr(e, 'details', None)
+        if details is not None:
+            error['details'] = details
+        return dict(id=request_id, ok=False, error=error)
+
+
 def main():
     agent = Agent()
     try:
         for line in sys.stdin:
-            request_id = None
-            try:
-                if len(line) > 65536:
-                    fail('NATIVE_INVALID_PARAMS', 'Request exceeds 64 KiB')
-                req = json.loads(line)
-                if not isinstance(req, dict):
-                    fail('NATIVE_INVALID_PARAMS', 'Request must be an object')
-                request_id = req.get('id')
-                if type(request_id) is not int or request_id < 0:
-                    fail('NATIVE_INVALID_PARAMS', 'Request ID must be a nonnegative integer')
-                if req.get('protocol') != 1:
-                    fail('NATIVE_PROTOCOL_MISMATCH', 'Expected protocol 1')
-                if not isinstance(req.get('params', {}), dict) or not isinstance(req.get('method'), str):
-                    fail('NATIVE_INVALID_PARAMS', 'Invalid method or params')
-                result = agent.dispatch(req['method'], req.get('params', {}))
-                response = dict(id=request_id, ok=True, result=result)
-            except Exception as e:
-                # dispatch() owns per-request reference cleanup; this loop only
-                # turns the failure into a protocol response.
-                response = dict(id=request_id, ok=False, error=dict(code=getattr(e, 'code', 'NATIVE_INTERNAL_ERROR'), message=str(e)))
-            print(json.dumps(response, ensure_ascii=False), flush=True)
+            print(json.dumps(handle_request(agent, line), ensure_ascii=False), flush=True)
     finally:
         agent.close()
 

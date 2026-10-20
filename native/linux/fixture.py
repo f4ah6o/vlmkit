@@ -18,7 +18,6 @@ from gi.repository import Gtk, Atk, GLib
 
 foreign = '--foreign' in sys.argv
 matrix = '--matrix' in sys.argv
-windows = []
 
 
 def identify(widget, name, identifier):
@@ -72,6 +71,15 @@ def base_window(title, x, y):
     unnamed = Gtk.Button()
     unnamed.set_size_request(70, 35)
     fixed.put(unnamed, 160, 170)
+    # A deterministic numeric value: the live lane asserts it survives AT-SPI as
+    # the slider's position, not as an interface pointer.
+    level = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 10, 1)
+    identify(level, 'Level', 'fixture.level')
+    level.set_value(4)
+    level.set_size_request(320, 35)
+    # GTK allocates a horizontal scale taller than its request (48px here), so
+    # place it where the whole rect stays inside the 360x260 client.
+    fixed.put(level, 20, 205)
     win.show_all()
     return win
 
@@ -133,9 +141,9 @@ def matrix_window(title, x, y):
 
     # One accessible name per string, so a name the tree reports identifies one
     # control: the pages are "First page"/"Second page", the tabs "One"/"Two".
-    # No identifiers here: GTK3 gives the notebook's accessible (the tab list) the
-    # last tab's name and id, so a tab identifier would stand for its container.
-    # The notebook's accessible is its tab list: it announces the current page.
+    # The notebook's accessible is its tab list; it keeps its own name and id as
+    # long as the tab labels are named but not identified (a tab identifier can
+    # replace the notebook's).
     notebook = Gtk.Notebook()
     identify(notebook, 'Pages', 'fixture.pages')
     notebook.set_tab_pos(Gtk.PositionType.TOP)
@@ -143,8 +151,9 @@ def matrix_window(title, x, y):
     for label, text in (('One', 'First page'), ('Two', 'Second page')):
         page = Gtk.Label(label=text)
         identify(page, text, 'fixture.page.' + label.lower())
-        notebook.append_page(page, Gtk.Label(label=label))
-        page.get_parent().get_accessible().set_name(label)
+        tab = Gtk.Label(label=label)
+        tab.get_accessible().set_name(label)
+        notebook.append_page(page, tab)
     fixed.put(notebook, 20, 330)
 
     combo = Gtk.ComboBoxText()
@@ -184,12 +193,23 @@ def matrix_window(title, x, y):
     return win
 
 
-if matrix:
-    windows.append(matrix_window('VLMKit Linux matrix', 80, 80))
-else:
-    windows.append(base_window('VLMKit Linux fixture', 80, 80))
+def build_windows():
+    """Build the fixture's windows but do not enter the main loop.
+
+    Keeping the loop out of import is what lets `test_fixture.py` import this
+    module in a child process and check that every fixture still builds: the
+    previous form ran `Gtk.main()` on import, so that smoke test could only time
+    out (and the live lane was the only place a renamed control surfaced).
+    """
+    if matrix:
+        return [matrix_window('VLMKit Linux matrix', 80, 80)]
+    built = [base_window('VLMKit Linux fixture', 80, 80)]
     if '--two' in sys.argv:
-        windows.append(base_window('VLMKit Linux fixture', 550, 80))
+        built.append(base_window('VLMKit Linux fixture', 550, 80))
+    return built
+
+
+windows = build_windows()
 
 
 def ready():
@@ -197,5 +217,10 @@ def ready():
     return False
 
 
-GLib.timeout_add(350, ready)
-Gtk.main()
+def run():
+    GLib.timeout_add(350, ready)
+    Gtk.main()
+
+
+if __name__ == '__main__':
+    run()

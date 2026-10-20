@@ -3,7 +3,11 @@
 Status: bounded X11 observer implemented; GTK/Xvfb/xcompmgr fixture acceptance passed
 for source `96249baa…`, and the 2026-10-20 round (bounded traversal, GTK semantics matrix,
 partial-tree and exit taxonomy, XWayland refusal) passed the hosted lane on `d8c3ddf0`
-([run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462)). Broader
+([run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462)). A
+follow-up review on the same day fixed an `AtspiValue*`-as-value defect, a double visit
+charge and the fixture's notebook overwrite
+([review](../../docs/reports/2026-10-20-linux-observer-review.md)); **its hosted lane is
+still pending**, so the `d8c3ddf0` PASS is not evidence for that source. Broader
 Linux profiles remain subject to their own admission evidence.
 
 Linux native is a first-class target alongside macOS. Eventual application/tool support
@@ -63,26 +67,33 @@ authorization or silent browser fallback is introduced.
 ## Remaining admission status — 2026-10-20
 
 Implementation round: [Linux native observer v2](../../docs/reports/2026-10-20-linux-native-observer-v2.md).
+Follow-up review: [Linux native observer review](../../docs/reports/2026-10-20-linux-observer-review.md)
+(pure suite and live probes PASS; the hosted lane for that source is **PENDING**).
 A checkbox below is only checked when the named evidence exists; a skipped or unrun lane
 is not a pass.
 
 - [x] Distinct visited-node/reference budgets before broader AT-SPI traversal — landed
   from unmerged `30872529` (cherry-picked), reviewed and repaired: the root is charged,
-  attribute failures no longer erase a node, the double request release is gone. Pure
-  wide/deep/cyclic/foreign-tree tests PASS locally.
+  each entered node is charged **once** (the review removed the leftover pre-acquisition
+  charge that halved the documented budget), attribute failures no longer erase a node,
+  the double request release is gone. Pure wide/deep/cyclic/foreign-tree tests PASS
+  locally.
 - [x] GTK semantics: a `--matrix` fixture (button, entry, password entry, check box,
-  toggle, radios, tabs, combo box, scrolled list, disabled, image) with per-control
+  toggle, radios, tab list, combo box, scrolled list, disabled, image) with per-control
   role/name/state/action assertions. **PASS hosted** on `d8c3ddf0`: for each control,
   its announced platform role, the normalized role it maps to, its name, its required
   states and a native `atspi:` action name where GTK exposes one; entry and password
   text absent from the artifact. The labelled `GtkEntry` is announced as role `text`
   by GTK3 and is recorded as such (`text` normalizes to itself) rather than claimed as
-  `textfield`; the notebook is held to its `page tab list`, one `selected` tab and that
-  tab's selected page label, because GTK moves a tab identifier to the tab list.
+  `textfield`; the notebook is held to its own `fixture.pages`/`Pages` tab list, one
+  `selected` tab and that tab's selected page label. The earlier "GTK moves a tab
+  identifier to the tab list" observation was the fixture setting the notebook's own
+  accessible name through `page.get_parent()`; the review fixed that.
 - [x] Partial/absent AT-SPI and target exit: target exit is **PASS live**
   (`NATIVE_TARGET_EXITED` after the fixture is stopped); `NATIVE_AX_PARTIAL` is
-  implemented and unit-tested, but its live profile is **UNRUN** because the lane does
-  not install `python3-xlib` (the profile records that reason in `report.json`).
+  implemented and unit-tested, and carries the X11/AT-SPI window counts in the
+  error's `details`, but its live profile is **UNRUN** because the lane does not
+  install `python3-xlib` (the profile records that reason in `report.json`).
 - [x] Multi-window: two same-title windows refuse implicit selection
   (`NATIVE_WINDOW_AMBIGUOUS`, base profile, pure + live assertions).
 - [x] Duplicate identifiers: reported with both paths; a duplicate never drops a node.

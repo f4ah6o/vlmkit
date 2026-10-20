@@ -2,9 +2,10 @@
 
 The fixture's semantics are what the live matrix profile asserts, so a syntax
 error or a renamed control here would otherwise only surface in the hosted lane.
-The module is imported in a child process: GTK needs its own main thread and,
-without a display, fails at `Gtk.Window(...)` — which is recorded as SKIPPED,
-never as a pass, because the live lane owns that evidence.
+The module is imported in a child process without entering its main loop (the
+fixture separates `build_windows()` from `run()`), so a display host checks that
+both fixtures build; without a display, `Gtk.Window(...)` fails and the test is
+recorded as SKIPPED, never as a pass, because the live lane owns that evidence.
 """
 import subprocess
 import sys
@@ -12,6 +13,18 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# `unittest discover -s native/linux` puts this directory on sys.path implicitly;
+# running a single module from the repository root does not.
+sys.path.insert(0, str(HERE))
+
+
+def _gtk_unavailable(stderr):
+    return any(message in stderr for message in (
+        "Gtk couldn't be initialized",
+        "cannot open display",
+        "Could not connect to display",
+        "Could not connect: Connection refused",
+    ))
 
 
 def import_fixture(*args):
@@ -42,7 +55,7 @@ class FixtureTests(unittest.TestCase):
             # A display that accepts the connection but never maps the window is the
             # same absence: the live lane is the only place this becomes evidence.
             self.skipTest("no usable display; the live lane owns the fixture evidence")
-        if result.returncode != 0 and "Gtk couldn't be initialized" in result.stderr:
+        if result.returncode != 0 and _gtk_unavailable(result.stderr):
             self.skipTest("GTK needs a display to build a window; the live lane owns that")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "1")
@@ -65,13 +78,14 @@ class FixtureTests(unittest.TestCase):
         # AT-SPI roles that map to it; every control has a fixture entry.
         fixture = (HERE / "fixture.py").read_text()
         self.assertEqual(set(integration.MATRIX), set(integration.MATRIX_ROLE))
-        for identifier, expected in integration.MATRIX.items():
-            for role in expected.get("roles", (expected["role"],)):
-                self.assertEqual(observer.role_of(role), integration.MATRIX_ROLE[identifier], identifier)
+        for identifier in integration.MATRIX:
+            for role in integration.accepted_roles(identifier):
                 self.assertIn(role, observer.ROLES, identifier)
-            # The notebook is known by its tab list; every other control by its id.
-            if identifier != "fixture.tabs":
-                self.assertIn(identifier, fixture, identifier)
+                # The mapping is checked for every accepted name, including the
+                # `text` GTK3 announces for a labelled entry; a lost mapping must
+                # fail here rather than agree with whatever the observer produced.
+                self.assertIn(observer.role_of(role), integration.MATRIX_ROLE[identifier], identifier)
+            self.assertIn(identifier, fixture, identifier)
 
 if __name__ == "__main__":
     unittest.main()

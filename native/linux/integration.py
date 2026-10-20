@@ -35,22 +35,24 @@ MATRIX = {
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
-    # GTK3 gives the notebook's accessible (its tab list) the last tab's name and
-    # id, and a tab's name is announced inconsistently, so the notebook is found
-    # by its tab list and held to its selected tab state and selected page label.
-    'fixture.tabs': dict(role='page tab list', selected_page='First page'),
+    # The notebook's accessible is its tab list and keeps the notebook's own
+    # name/id when the tab labels are named but not identified (measured on
+    # GTK3 3.24). Its selected tab and selected page label are still asserted.
+    'fixture.pages': dict(role='page tab list', name='Pages', selected_page='First page'),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
 }
-# The normalized role each platform role must map to; `observer.ROLES` is the
-# table under test, so the run fails if a mapping is lost rather than agreeing
-# with whatever the observer produced.
-observer_role = {
-    'push button': 'button', 'entry': 'textfield', 'password text': 'textfield',
-    'check box': 'checkbox', 'radio button': 'radio', 'page tab': 'tab',
-    'combo box': 'combobox', 'toggle button': 'button', 'label': 'text', 'image': 'image',
-    'page tab list': 'group', 'table': 'list', 'scroll bar': 'scrollview',
+# The normalized role(s) a matrix control may produce, one per accepted platform
+# role name (see MATRIX_ROLE_NAMES). GTK3 announces a labelled GtkEntry as
+# `text`, which normalizes to `text`, so the entry accepts both names and both
+# results; every other control has one.
+MATRIX_ROLE = {
+    'fixture.save': ('button',), 'fixture.name': ('textfield', 'text'),
+    'fixture.secret': ('textfield',), 'fixture.remember': ('checkbox',),
+    'fixture.toggle': ('button',), 'fixture.mode.a': ('radio',), 'fixture.mode.b': ('radio',),
+    'fixture.pages': ('group',), 'fixture.choice': ('combobox',),
+    'fixture.disabled': ('button',), 'fixture.color': ('image',),
 }
 
 # Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
@@ -63,17 +65,15 @@ MATRIX_ROLE_NAMES = {
     'fixture.secret': ('password text', 'entry'),
 }
 
-# The normalized role expected for a matrix control, from its accepted names.
-MATRIX_ROLE = {
-    'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
-    'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
-    'fixture.mode.b': 'radio', 'fixture.tabs': 'group',
-    'fixture.choice': 'combobox', 'fixture.disabled': 'button', 'fixture.color': 'image',
-}
-# Controls a tree can lose without losing the test: the combo box's popup and a
-# scrolled view's internals vary by GTK version. Their absence is recorded, not
-# required, because no admission claim rests on them.
-OPTIONAL = ('fixture.pages',)
+
+def accepted_roles(identifier):
+    """The platform role names a matrix control may announce."""
+    return MATRIX_ROLE_NAMES.get(identifier, (MATRIX[identifier]['role'],))
+
+
+# The fixture needs the system PyGObject; the observer itself is stdlib-only, so
+# the two deliberately do not use the same interpreter.
+GTK_PYTHON = '/usr/bin/python3'
 
 
 class Client:
@@ -105,7 +105,7 @@ class Client:
 
 def fixture(*args):
     env = dict(os.environ, GTK_MODULES='gail:atk-bridge', NO_AT_BRIDGE='0', GDK_BACKEND='x11')
-    p = subprocess.Popen(['/usr/bin/python3', str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
+    p = subprocess.Popen([GTK_PYTHON, str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
     assert select.select([p.stdout], [], [], 15)[0], 'GTK fixture startup timed out'
     ready = json.loads(p.stdout.readline())
     assert ready['ready'] and ready['pid'] == p.pid
@@ -186,12 +186,6 @@ def by_identifier(tree):
         if identifier:
             assert identifier not in found, ('A matrix control identifier is duplicated', identifier, node['path'])
             found[identifier] = node
-    # The notebook has no identifier of its own; its tab list is the notebook, and
-    # it announces the selected page by name, which is unique in this window.
-    for node in tree['nodes']:
-        if node.get('platformRole') == 'page tab list':
-            found.setdefault('fixture.tabs', node)
-            break
     return found
 
 
@@ -222,17 +216,12 @@ def capture_matrix(client, out):
             # may report `entry` as its AtkRole; both map to `textfield` and neither
             # carries a value, so both are accepted by name.
             actual = observed[identifier]['platformRole']
-            allowed = MATRIX_ROLE_NAMES.get(identifier, (expected['role'],))
-            # The notebook's tab list is the control this identifier names, so it is
-            # looked up by the tab list's role whatever its declared primary role.
-            if identifier == 'fixture.tabs':
-                assert actual == 'page tab list', (identifier, 'platform role', actual)
-            else:
-                assert actual in allowed, (identifier, 'platform role', actual, allowed)
+            allowed = accepted_roles(identifier)
+            assert actual in allowed, (identifier, 'platform role', actual, allowed)
             if 'selected_page' in expected:
                 # Exactly one tab is selected, and it carries the selected page's
                 # label. A tab's own name is recorded in `observed`, not required:
-                # GTK versions differ on whether it is announced at all.
+                # GTK versions differ on whether the tab label's name is announced.
                 tabs = [n for n in tree['nodes'] if n.get('platformRole') == 'page tab'
                         and n['path'].startswith(node['path'] + '>')]
                 assert tabs, (identifier, 'no page tab announced under the notebook', node['path'])
@@ -243,7 +232,7 @@ def capture_matrix(client, out):
                                                      expected['selected_page'], chosen[0]['path'])
             # An accepted alternative name is recorded, not normalized away: a tree
             # that calls a labelled entry `text` is what the toolkit announced.
-            assert node['role'] == observer_role.get(actual, actual), (identifier, 'role', actual, node['role'])
+            assert node['role'] in MATRIX_ROLE[identifier], (identifier, 'role', actual, node['role'])
             if 'name' in expected:
                 assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
             for state in expected.get('states', ()):
@@ -271,7 +260,6 @@ def capture_matrix(client, out):
         assert pixel(*point) == (255, 0, 0), ('Matrix image rect must align with its red pixels', point, pixel(*point))
         report = dict(pid=app.pid, windowId=selected['windowId'], capture=result, tree=tree['nodes'],
                       observed=observed, unnamedButtons=[n['path'] for n in unnamed],
-                      optional=fetch_identifiers(tree, OPTIONAL),
                       alignment=dict(imageRect=color, imagePoint=list(point), imageRgb=list(pixel(*point))))
         client.request('session.close', dict(sessionId=sid))
         assert app.poll() is None, 'close must detach, never terminate the target'
@@ -284,11 +272,6 @@ def capture_matrix(client, out):
         if x:
             x.fn('XCloseDisplay', I)()
         stop(app)
-
-
-def fetch_identifiers(tree, identifiers):
-    present = {n.get('identifier') for n in tree['nodes']}
-    return {i: (i in present) for i in identifiers}
 
 
 def capture_base(client, out):
@@ -353,6 +336,12 @@ def capture_base(client, out):
         assert entry is not None and 'value' not in entry, ('Entry text must not be collected', entry)
         assert 'Fixture value' not in (out / 'a11y.json').read_text(), 'Entry text leaked into the base tree'
         report['checks'].append('entry text is not collected')
+        # A scalar value is the control's position, not the AtspiValue interface
+        # pointer the old reader wrote into the tree (a memory address).
+        level = next(n for n in tree['nodes'] if n.get('identifier') == 'fixture.level')
+        assert level['role'] == 'slider', level
+        assert level.get('value') == '4', ('A numeric value must be the slider position', level)
+        report['checks'].append('deterministic numeric value collected')
         truncated = client.request('snapshot.capture', dict(params, maxNodes=1, outputTreePath=str(out / 'truncated.json'), outputPngPath=str(out / 'truncated.png')))
         assert truncated['counts']['nodes'] == 1 and truncated['counts']['truncated'] > 0
         report['checks'].append('bounded traversal reports truncation')

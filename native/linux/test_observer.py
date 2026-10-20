@@ -138,6 +138,11 @@ class ObserverTests(unittest.TestCase):
         with self.assertRaises(o.Failure) as caught:
             agent.windows(dict(pid=100))
         self.assertEqual(caught.exception.code, 'NATIVE_AX_PARTIAL')
+        # The counts travel with the error as machine-readable details; the
+        # caller retrying a toolkit bridge does not have to parse the message.
+        self.assertEqual(caught.exception.details['x11Windows'], 1)
+        self.assertEqual(caught.exception.details['atspiWindows'], 0)
+        self.assertEqual(caught.exception.details['atspiApps'], 0)
 
     def test_partial_association_is_evidence_on_the_session(self):
         agent = o.Agent()
@@ -239,10 +244,10 @@ class ObserverTests(unittest.TestCase):
         fake = TreeAtspi({1: list(range(2, 12))}, geometryless=range(1, 12))
         nodes, counts, diagnostics = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1), max_nodes=1, max_visited=4)
         self.assertEqual(nodes, [])
-        # The root's own visit is charged, so only two more children fit in a
-        # budget of 4; the remaining 9 descendants are counted as truncated.
-        self.assertEqual(len(fake.child_fetches), 2)
-        self.assertEqual(counts['truncated'], 9)
+        # A visit is charged once per entered node: the root, then three more
+        # children fit in a budget of 4. The remaining seven are truncated.
+        self.assertEqual(len(fake.child_fetches), 3)
+        self.assertEqual(counts['truncated'], 7)
         self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
 
     def test_lazy_cycle_deep_and_foreign_tree_edges_are_bounded(self):
@@ -266,21 +271,26 @@ class ObserverTests(unittest.TestCase):
         self.assertTrue(any(d['code'] == 'NATIVE_AX_FOREIGN_SUBTREE' for d in diagnostics))
 
     def test_visit_limit_exact_boundary_and_reference_reservation(self):
-        # Root + one child = 2 visits; the root is charged, not free. Each visited
-        # node also needs a component reference, so the budget is 3 here.
+        # Root + one child = 2 entered nodes and 2 visits: the root is charged
+        # like any other node, and a child is charged exactly once.
         exact = TreeAtspi({1: [2]})
         _, counts, _ = o.collect(exact, 1, 100, o.rect(0, 0, 1, 1), max_visited=3)
         self.assertEqual(counts['nodes'], 2)
         self.assertEqual(counts['truncated'], 0)
         self.assertEqual(exact.child_fetches, [(1, 0)])
 
-        off_by_one = TreeAtspi({1: [2]})
-        _, counts, diagnostics = o.collect(off_by_one, 1, 100, o.rect(0, 0, 1, 1), max_visited=2)
+        fits = TreeAtspi({1: [2]})
+        _, counts, _ = o.collect(fits, 1, 100, o.rect(0, 0, 1, 1), max_visited=2)
+        self.assertEqual(counts['nodes'], 2)
+        self.assertEqual(counts['truncated'], 0)
+        self.assertEqual(fits.child_fetches, [(1, 0)])
+
+        exhausted = TreeAtspi({1: [2]})
+        _, counts, diagnostics = o.collect(exhausted, 1, 100, o.rect(0, 0, 1, 1), max_visited=1)
         self.assertEqual(counts['nodes'], 1)
         self.assertEqual(counts['truncated'], 1)
-        # The child reference is acquired, then refused entry to the budget; it
-        # must be counted as truncated rather than silently dropped.
-        self.assertEqual(off_by_one.child_fetches, [(1, 0)])
+        # The remaining child must not be acquired once the budget is spent.
+        self.assertEqual(exhausted.child_fetches, [])
         self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
 
         limited = TreeAtspi({1: [2]})
@@ -422,7 +432,6 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(tree.references_used, 0)
 
     def test_session_identity_cleanup_on_eof(self):
-        from unittest.mock import Mock
         agent = o.Agent()
         agent.x, agent.a = Mock(), Mock()
         agent.sessions['s'] = dict(selectedObj=42, selectedXid=99)
@@ -439,6 +448,21 @@ class ObserverTests(unittest.TestCase):
             o.write_artifacts(str(tree), str(frame), {'format': 'vlmkit-a11y/1'}, b'png')
             self.assertEqual(json.loads(tree.read_text())['format'], 'vlmkit-a11y/1')
             self.assertEqual(frame.read_bytes(), b'png')
+
+    def test_protocol_envelope_carries_details(self):
+        agent = o.Agent()
+        agent.dispatch = Mock(side_effect=o.Failure(
+            'NATIVE_AX_PARTIAL', 'no bridge', details=dict(x11Windows=1, atspiWindows=0)))
+        response = o.handle_request(agent, json.dumps(dict(id=7, protocol=1, method='window.list', params={})))
+        self.assertEqual(response['id'], 7)
+        self.assertFalse(response['ok'])
+        self.assertEqual(response['error']['code'], 'NATIVE_AX_PARTIAL')
+        self.assertEqual(response['error']['details'], dict(x11Windows=1, atspiWindows=0))
+        # A plain exception must not invent a details field.
+        agent.dispatch = Mock(side_effect=RuntimeError('boom'))
+        response = o.handle_request(agent, json.dumps(dict(id=8, protocol=1, method='hello', params={})))
+        self.assertEqual(response['error']['code'], 'NATIVE_INTERNAL_ERROR')
+        self.assertNotIn('details', response['error'])
 
     def test_ndjson_protocol_stdout(self):
         requests = [dict(id=1, protocol=1, method='hello', params={}),
@@ -469,25 +493,42 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(o.role_of('date editor'), 'date editor')
         self.assertEqual(o.role_of(''), 'unknown')
 
-    def test_value_is_a_deterministic_scalar_or_absent(self):
-        self.assertEqual(o.scalar_value(42), '42')
-        self.assertEqual(o.scalar_value('Save'), 'Save')
-        self.assertEqual(o.scalar_value(0.25), '0.25')
-        self.assertIsNone(o.scalar_value(True))
-        self.assertIsNone(o.scalar_value(float('nan')))
-        self.assertIsNone(o.scalar_value({'text': 'x'}))
+    def test_value_is_a_deterministic_number_or_absent(self):
+        self.assertEqual(o.numeric_text(42), '42')
+        self.assertEqual(o.numeric_text(4.0), '4')
+        self.assertEqual(o.numeric_text(0.25), '0.25')
+        self.assertIsNone(o.numeric_text(True))
+        self.assertIsNone(o.numeric_text(float('nan')))
+        self.assertIsNone(o.numeric_text(float('inf')))
+        self.assertIsNone(o.numeric_text('Save'))
 
-    def test_entry_text_and_password_are_never_collected(self):
+    def test_value_reads_the_value_interface_not_a_pointer(self):
         a = object.__new__(o.Atspi)
-        a.call = Mock(return_value='hunter2')
-        self.assertIsNone(a.value(1, 'entry'))
-        self.assertIsNone(a.value(1, 'password text'))
+        a.obj = Mock(return_value=7)
+        a.call = Mock(return_value=4.0)
+        self.assertEqual(a.value(1, 'slider'), '4')
+        # `atspi_accessible_get_value_iface` returns AtspiValue* and takes no
+        # GError; the old call passed that pointer through as the value.
+        a.obj.assert_called_once_with('accessible_get_value_iface', 1, error=False)
+        a.call.assert_called_once_with('value_get_current_value', 7, result=o.C.c_double)
+        a.obj = Mock(return_value=None)
+        self.assertIsNone(a.value(1, 'progress bar'))
+        a.obj = Mock(side_effect=o.Failure('NATIVE_AX_CANNOT_COMPLETE', 'no value iface'))
+        self.assertIsNone(a.value(1, 'slider'))
+
+    def test_roles_outside_the_value_set_never_probe(self):
+        a = object.__new__(o.Atspi)
+        a.obj = Mock()
+        a.call = Mock()
+        for role in ('entry', 'password text', 'text', 'label', 'static', 'push button'):
+            self.assertIsNone(a.value(1, role), role)
+        a.obj.assert_not_called()
         a.call.assert_not_called()
-        self.assertEqual(a.value(1, 'slider'), 'hunter2')
 
     def test_value_read_failure_is_absent_not_fatal(self):
         a = object.__new__(o.Atspi)
-        a.call = Mock(side_effect=o.Failure('NATIVE_AX_CANNOT_COMPLETE', 'no value iface'))
+        a.obj = Mock(return_value=7)
+        a.call = Mock(side_effect=o.Failure('NATIVE_AX_CANNOT_COMPLETE', 'no current value'))
         self.assertIsNone(a.value(1, 'slider'))
 
     def test_states_are_restricted_to_the_contract(self):

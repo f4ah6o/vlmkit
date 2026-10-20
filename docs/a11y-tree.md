@@ -174,11 +174,13 @@ VLMKIT_NATIVE_AGENT=native/linux/observer.py \
 vlmkit check a11y tree a11y.json
 ```
 
-Linux values are **not collected** for text-entry roles: the profile observes
-roles, names, toolkit identifiers, states and native `atspi:` action names, and
-an entry's text is content, not state (a `password text` node is never read).
-A control whose value is a deterministic scalar (a slider, a progress bar) may
-report `value`. A toolkit window that X11 sees but AT-SPI does not, or whose
-geometry disagrees, is reported as `NATIVE_AX_PARTIAL` and never becomes an empty
-tree. See [native/linux/README.md](../native/linux/README.md) for the admitted
-profile and its limits.
+Linux values are **numeric and never text**: the profile observes roles, names,
+toolkit identifiers, states and native `atspi:` action names, and an entry's text
+is content, not state (a `password text` node is never read; GTK3 can announce a
+labelled entry as `text`, so the text roles are excluded too). A control whose
+AT-SPI value is a finite number (a slider, a progress bar, a spin button, a
+scroll bar) reports that number as `value`. A toolkit window that X11 sees but
+AT-SPI does not, or whose geometry disagrees, is reported as `NATIVE_AX_PARTIAL`
+with the window counts in the error's `details`, and never becomes an empty tree.
+See [native/linux/README.md](../native/linux/README.md) for the admitted profile
+and its limits.
