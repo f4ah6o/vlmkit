@@ -35,10 +35,11 @@ MATRIX = {
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
-    # GTK3 keeps neither tab identifier (the notebook's accessible takes the last
-    # tab's name and id), so the tabs are identified by name and the selected
-    # state is the claim.
-    'fixture.tab.one': dict(role='page tab', name='One', states=['selected']),
+    # GTK3 keeps no tab identifier (the notebook's accessible takes the last tab's
+    # name and id), so the notebook is identified by its tab list and its
+    # selected page; a page tab's own name is not announced reliably across GTK
+    # versions either, and is recorded rather than required.
+    'fixture.tabs': dict(role='page tab list', name='One', selected_page='First page', tab_state='selected'),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
@@ -66,7 +67,7 @@ MATRIX_ROLE_NAMES = {
 MATRIX_ROLE = {
     'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
     'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
-    'fixture.mode.b': 'radio', 'fixture.tab.one': 'tab',
+    'fixture.mode.b': 'radio', 'fixture.tabs': 'group',
     'fixture.choice': 'combobox', 'fixture.disabled': 'button', 'fixture.color': 'image',
 }
 # Controls a tree can lose without losing the test: the combo box's popup and a
@@ -185,6 +186,12 @@ def by_identifier(tree):
         if identifier:
             assert identifier not in found, ('A matrix control identifier is duplicated', identifier, node['path'])
             found[identifier] = node
+    # The notebook has no identifier of its own; its tab list is the notebook, and
+    # it announces the selected page by name, which is unique in this window.
+    for node in tree['nodes']:
+        if node.get('platformRole') == 'page tab list' and (node.get('name') or '').strip() not in ('', 'Pages'):
+            found.setdefault('fixture.tabs', node)
+            break
     return found
 
 
@@ -217,6 +224,18 @@ def capture_matrix(client, out):
             actual = observed[identifier]['platformRole']
             allowed = MATRIX_ROLE_NAMES.get(identifier, (expected['role'],))
             assert actual in allowed, (identifier, 'platform role', actual, allowed)
+            if 'selected_page' in expected:
+                # Exactly one tab is selected, and it carries the selected page's
+                # label. A tab's own name is recorded in `observed`, not required:
+                # GTK versions differ on whether it is announced at all.
+                tabs = [n for n in tree['nodes'] if n.get('platformRole') == 'page tab'
+                        and n['path'].startswith(node['path'] + '>')]
+                assert tabs, (identifier, 'no page tab announced under the notebook', node['path'])
+                chosen = [t for t in tabs if t.get('states', {}).get('selected') is True]
+                assert len(chosen) == 1, (identifier, 'exactly one tab must be selected', [t['path'] for t in tabs])
+                assert any(n.get('name') == expected['selected_page'] and n['path'].startswith(chosen[0]['path'] + '>')
+                           for n in tree['nodes']), (identifier, 'the selected tab must carry the selected page label',
+                                                     expected['selected_page'], chosen[0]['path'])
             # An accepted alternative name is recorded, not normalized away: a tree
             # that calls a labelled entry `text` is what the toolkit announced.
             assert node['role'] == observer_role.get(actual, actual), (identifier, 'role', actual, node['role'])
