@@ -138,14 +138,16 @@ def matrix_window(title, x, y):
     identify(notebook, 'Pages', 'fixture.pages')
     notebook.set_tab_pos(Gtk.PositionType.TOP)
     notebook.set_size_request(320, 120)
-    for label, identifier, text in (('One', 'fixture.tab.one', 'First page'),
+    for label, identifier, text in (('One', 'fixture.tabs', 'First page'),
                                     ('Two', 'fixture.tab.two', 'Second page')):
         page = Gtk.Label(label=text)
         identify(page, text, identifier + '.page')
         notebook.append_page(page, Gtk.Label(label=label))
-        page.get_parent().get_accessible().set_name(label)
-        if hasattr(page.get_parent().get_accessible(), 'set_accessible_id'):
-            page.get_parent().get_accessible().set_accessible_id(identifier)
+        # The tab (or, in other GTK versions, its tab list) keeps the identifier.
+        tab = page.get_parent().get_accessible()
+        tab.set_name(label)
+        if hasattr(tab, 'set_accessible_id'):
+            tab.set_accessible_id(identifier)
     fixed.put(notebook, 20, 330)
 
     combo = Gtk.ComboBoxText()

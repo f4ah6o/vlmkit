@@ -35,10 +35,7 @@ MATRIX = {
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
-    'fixture.tab.one': dict(role='page tab', name='One'),
-    # The notebook announces its current page on the tab list; the tab itself
-    # carries its `selected` state, and the pages their names.
-    'fixture.tabs': dict(role='page tab list', name='Two'),
+    'fixture.tabs': dict(role='page tab', name='One', states=['selected']),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
@@ -60,14 +57,15 @@ observer_role = {
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
-    'fixture.tabs': ('page tab list',),
+    # Some GTK versions put the tab identifier on the tab list, not the tab.
+    'fixture.tabs': ('page tab', 'page tab list'),
 }
 
 # The normalized role expected for a matrix control, from its accepted names.
 MATRIX_ROLE = {
     'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
     'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
-    'fixture.mode.b': 'radio', 'fixture.tab.one': 'tab', 'fixture.tabs': 'group',
+    'fixture.mode.b': 'radio', 'fixture.tabs': 'tab',
     'fixture.choice': 'combobox', 'fixture.disabled': 'button', 'fixture.color': 'image',
 }
 # Controls a tree can lose without losing the test: the combo box's popup and a
@@ -186,12 +184,6 @@ def by_identifier(tree):
         if identifier:
             assert identifier not in found, ('A matrix control identifier is duplicated', identifier, node['path'])
             found[identifier] = node
-    # A notebook's tab list carries the current page's name and no identifier of
-    # the notebook's own; it is looked up by that name, recorded by its path.
-    for node in tree['nodes']:
-        if node.get('platformRole') == 'page tab list' and (node.get('name') or '').strip():
-            found.setdefault('fixture.tabs', node)
-            break
     return found
 
 
