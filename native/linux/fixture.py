@@ -58,6 +58,10 @@ def base_window(title, x, y):
     fixed.put(save, 20, 100)
     entry = Gtk.Entry()
     identify(entry, 'Name', 'fixture.name')
+    # Without this GTK3 announces a GtkEntry labelled only by its accessible name
+    # as role TEXT (measured on the hosted lane); naming its ATK role keeps the
+    # control an entry, which is what this profile is about.
+    entry.get_accessible().set_role(Atk.Role.ENTRY)
     entry.set_text('Fixture value')
     entry.set_size_request(180, 35)
     fixed.put(entry, 140, 100)
@@ -91,6 +95,10 @@ def matrix_window(title, x, y):
 
     entry = Gtk.Entry()
     identify(entry, 'Name', 'fixture.name')
+    # Without this GTK3 announces a GtkEntry labelled only by its accessible name
+    # as role TEXT (measured on the hosted lane); naming its ATK role keeps the
+    # control an entry, which is what this profile is about.
+    entry.get_accessible().set_role(Atk.Role.ENTRY)
     entry.set_text('Fixture value')
     entry.set_size_request(180, 35)
     fixed.put(entry, 140, 100)

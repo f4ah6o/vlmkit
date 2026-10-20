@@ -51,10 +51,10 @@ observer_role = {
 }
 
 # The normalized role expected for a matrix control, from its accepted names.
-# Platform-role names GTK may legitimately report for one control. `Name` is a
-# GtkEntry labelled by its accessible name alone: GTK3's GtkEntry accessible
-# reports role TEXT with that name, so the tree says `text`; the entry is
-# accepted under either name, without a value in both cases.
+# Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
+# only by its accessible name is announced as `text` (measured hosted); the
+# fixture names its ATK role so the tree says `entry`, and a hidden entry is
+# `password text` or `entry` depending on the toolkit version.
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
