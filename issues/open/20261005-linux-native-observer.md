@@ -1,10 +1,10 @@
 # Linux native observer and support admission
 
 Status: bounded X11 observer implemented; GTK/Xvfb/xcompmgr fixture acceptance passed
-for source `96249baa…`. The 2026-10-20 round (bounded traversal, GTK semantics matrix,
-partial-tree and exit taxonomy, XWayland refusal) is implemented with pure tests green;
-its hosted acceptance is **pending a run**. Broader Linux profiles remain subject to
-their own admission evidence.
+for source `96249baa…`, and the 2026-10-20 round (bounded traversal, GTK semantics matrix,
+partial-tree and exit taxonomy, XWayland refusal) passed the hosted lane on `d8c3ddf0`
+([run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462)). Broader
+Linux profiles remain subject to their own admission evidence.
 
 Linux native is a first-class target alongside macOS. Eventual application/tool support
 covers macOS, Linux and Windows. New Windows work is deferred until higher-priority
@@ -29,7 +29,7 @@ Record implementation and actual acceptance separately for each profile:
 | Profile | Observer | Physical input |
 | --- | --- | --- |
 | macOS 14+ AX/ScreenCaptureKit | Existing fixture evidence; preserve regression tests | PR #2 remains separately gated |
-| Linux composited X11 AT-SPI/XComposite, scale 1 | GTK/Xvfb/xcompmgr fixture PASS at `96249baa…` ([exact evidence](../../docs/reports/2026-10-05-linux-native-observer.md)); matrix/partial/exit round [v2](../../docs/reports/2026-10-20-linux-native-observer-v2.md) is UNRUN on this source | Unsupported |
+| Linux composited X11 AT-SPI/XComposite, scale 1 | GTK/Xvfb/xcompmgr fixture PASS at `96249baa…` ([exact evidence](../../docs/reports/2026-10-05-linux-native-observer.md)) and again at `d8c3ddf0` with the matrix/exit round ([v2](../../docs/reports/2026-10-20-linux-native-observer-v2.md)); the X11-only partial check and GPUI semantics are still UNRUN | Unsupported |
 | X11 other WMs, toolkits, scale factors | Unqualified until corresponding runs | Unsupported |
 | Linux Wayland, named compositor/portal versions | Follow-up required | Unsupported |
 | XWayland | Separate qualification required | Unsupported |
@@ -72,13 +72,17 @@ is not a pass.
   wide/deep/cyclic/foreign-tree tests PASS locally.
 - [x] GTK semantics: a `--matrix` fixture (button, entry, password entry, check box,
   toggle, radios, tabs, combo box, scrolled list, disabled, image) with per-control
-  role/name/state/action assertions. Implementation and fixture contract tests PASS
-  locally; **hosted run: pending**.
-- [x] Partial/absent AT-SPI and target exit: `NATIVE_AX_PARTIAL` (with window counts) and
-  `NATIVE_TARGET_EXITED` are implemented and unit-tested; the X11-only partial profile
-  is **UNRUN** (needs `python3-xlib`, not installed in the lane) and the live partial
-  and exit checks await the hosted lane (the exit check is in the base profile's live
-  assertions, not yet executed).
+  role/name/state/action assertions. **PASS hosted** on `d8c3ddf0`: for each control,
+  its announced platform role, the normalized role it maps to, its name, its required
+  states and a native `atspi:` action name where GTK exposes one; entry and password
+  text absent from the artifact. The labelled `GtkEntry` is announced as role `text`
+  by GTK3 and is recorded as such (`text` normalizes to itself) rather than claimed as
+  `textfield`; the notebook is held to its `page tab list`, one `selected` tab and that
+  tab's selected page label, because GTK moves a tab identifier to the tab list.
+- [x] Partial/absent AT-SPI and target exit: target exit is **PASS live**
+  (`NATIVE_TARGET_EXITED` after the fixture is stopped); `NATIVE_AX_PARTIAL` is
+  implemented and unit-tested, but its live profile is **UNRUN** because the lane does
+  not install `python3-xlib` (the profile records that reason in `report.json`).
 - [x] Multi-window: two same-title windows refuse implicit selection
   (`NATIVE_WINDOW_AMBIGUOUS`, base profile, pure + live assertions).
 - [x] Duplicate identifiers: reported with both paths; a duplicate never drops a node.
@@ -95,9 +99,10 @@ is not a pass.
   sibling/occlusion checks exist.
 - [ ] Real gpui.mbt/MZed semantics: **BLOCKED** on the application/framework exposing
   accessibility; no synthetic tree is permitted.
-- [x] Preserve the macOS/browser regressions: macOS transport tests unchanged in source
-  (their vitest run is **UNRUN** in this sandbox — no installed dependencies; the CI
-  transport job runs both files).
+- [x] Preserve the macOS/browser regressions: **PASS hosted** — the `transport` job runs
+  `linux-agent.test.ts` and the unchanged `native-agent.test.ts` at the same source, and
+  the repository `test`, `fmt`, `parity`, `package-install-smoke` and page-load workflows
+  are green on the PR.
 
 ## Sources
 

@@ -1,8 +1,11 @@
 # Linux native observer v2: bounded traversal and a GTK semantics matrix — 2026-10-20
 
-Status: observer-side implementation and pure tests complete; **the hosted X11 lane has
-not run on this source** (see "Evidence status"). Broader X11, Wayland, physical input and
-GPUI/MZed acceptance remain open in the
+Status: observer-side implementation complete; the hosted X11 lane **passed** on source
+`d8c3ddf0` ([run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462):
+`observer` and `transport` both green, 16/16 fixture checks, live TypeScript scan and
+generic judge pass). The one profile still unrun is the X11-only partial-association
+check (`python3-xlib` is not installed in the lane). Broader X11, Wayland, physical
+input and GPUI/MZed acceptance remain open in the
 [Linux packet](../../issues/open/20261005-linux-native-observer.md).
 
 This round closes the observer's own remaining gaps in three parts: it lands the
@@ -16,11 +19,12 @@ toolkit-independent coordinates, and no row below claims a profile it did not ob
 | what | outcome | basis |
 |---|---|---|
 | Python pure suite (`native/linux/test_*.py`) | **PASS**, 35 tests, 2 skipped | run in this sandbox: `python3 -m unittest discover -s native/linux -p 'test_*.py'` |
-| Fixture import smoke (base + matrix) | **SKIPPED** here, **UNRUN** hosted | GTK needs a display; the two skips are this test, which says so |
-| `linux-agent.test.ts` + `native-agent.test.ts` (vitest transport lane) | **UNRUN** | `node_modules` is absent in this sandbox and `pnpm`/`vp` cannot install (`EROFS` on the package-manager cache); the source was read, not executed |
-| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **PASS** — [run 39361211824](https://github.com/f4ah6o/vlmkit/actions/runs/39361211824), report `passed: true` | all 16 checks: base (occlusion, ambiguity, truncation, entry text absent, `NATIVE_TARGET_EXITED`, close detaches), the semantics matrix, and `NATIVE_X11_CLIENT_FRAME`/no attribute diagnostics |
+| Fixture import smoke (base + matrix) | **SKIPPED** by design | it imports GTK, which needs a display; the live lane below is what proves the fixtures build |
+| `linux-agent.test.ts` + `native-agent.test.ts` (vitest transport lane) | **PASS** — `transport` job, [39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462) | ran hosted; the author's sandbox could not install dependencies (`EROFS`) |
+| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **PASS** — [run 39361211824](https://github.com/f4ah6o/vlmkit/actions/runs/39361211824), then again at the final source in [39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462) (`report.json` `passed: true`, SHA-256 `c402cc74…`) | all 16 checks: base (occlusion, ambiguity, truncation, entry text absent, `NATIVE_TARGET_EXITED`, close detaches), the semantics matrix, and `NATIVE_X11_CLIENT_FRAME`/no attribute diagnostics |
 | Semantics-matrix live assertions | **PASS** (same run) | observed, per control: `push button→button`, `text→text` (the labelled entry), `password text→textfield`, `check box→checkbox` `checked`, `toggle button→button`, `radio button→radio` (`Mode A` checked), `page tab list→group` with one `selected` tab, `combo box→combobox`, `image→image`, plus native `atspi:click`/`atspi:activate`/`atspi:press` action names |
-| Recorded fixture (`fixtures/native/linux/matrix`) | recorded from the hosted run above | trimmed to the identified controls plus the unnamed button; the judge's rules re-derived against it give one finding, the unnamed `button[12]`, which is what `expected.json` holds. The vitest assertion ran in the `transport` job (both tests passed) — its source predates the re-record, so the next run is its first with this artifact |
+| Recorded fixture (`fixtures/native/linux/matrix`) | **PASS** in the `transport` job of 39361423462 | re-recorded from the hosted tree; the judge's rules give one finding (the unnamed `button[12]`), which is what `expected.json` holds |
+| X11-only partial association (`python3-xlib`) | **UNRUN** in the lane | `python3-xlib` is not installed; the profile records that reason in `report.json` rather than skipping silently |
 
 ### Hosted runs
 
@@ -37,10 +41,19 @@ the artifact itself:
 | [39359993201](https://github.com/f4ah6o/vlmkit/actions/runs/39359993201) | observer FAIL, transport PASS | the retained tree showed the tab list inheriting the second tab's identifier, so the selected tab had none | one tab identifier (`fixture.tabs`), asserted on the tab's `selected` state |
 | [39360303322](https://github.com/f4ah6o/vlmkit/actions/runs/39360303322) | observer FAIL, transport PASS | the tab identifier landed on the **page label** (`fixture.tabs.page`), and the tab list still kept the second tab's identifier | the tab is identified before the tab list's own name/id is set, and the tab list is cleared afterwards |
 | [39360516307](https://github.com/f4ah6o/vlmkit/actions/runs/39360516307) | observer FAIL, transport PASS | setting the notebook's accessible after the pages changed nothing: GTK3's notebook accessible *is* the tab list and takes the last tab's name and id | the tabs are identified by name and their `selected` state; no tab identifier is claimed |
+| [39360737238](https://github.com/f4ah6o/vlmkit/actions/runs/39360737238) | observer FAIL, transport PASS | the selected tab is a `page tab` that carries no name, so a named-tab assertion cannot hold | the notebook is asserted by its selected tab's state and selected page label |
+| [39360963811](https://github.com/f4ah6o/vlmkit/actions/runs/39360963811) | observer FAIL, transport PASS | the tab list's own name is the last tab's; the expected normalized-role table lacked `page tab list`/`table`/`scroll bar` | no declared tab-list name; the observer's expected roles table learns the three roles |
+| [39361211824](https://github.com/f4ah6o/vlmkit/actions/runs/39361211824) | fixture lane PASS, live TypeScript FAIL | every capture carries a `NATIVE_X11_CLIENT_FRAME` note the live test did not accept | accepted by name, alongside the geometry-less-widget diagnostic |
+| [39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462) | **observer PASS, transport PASS** | — | final source of this round (`d8c3ddf0`) |
 
-The retained artifact of 39359445974 was read to make the last two rows: the base
-profile's tree (7 nodes, identifier/actions/`disabled` present, no entry text) is the
-shape the generic judge already consumes.
+The retained artifact of each run was read to make these rows: the base profile's tree
+(7 nodes, identifier/actions/`disabled` present, no entry text) is the shape the generic
+judge already consumes, and the matrix tree is what `fixtures/native/linux/matrix` now
+records.
+
+Artifact: [linux-x11-observer-evidence, run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462/artifacts/12237691766)
+(30,345 bytes, retained to 2026-11-03) with `SHA256SUMS`, `report.json`, both trees and
+frames, and `ts-live/verdict.json` (`"success"`).
 
 A skipped lane is not a pass. The previous round's hosted PASS
 (`docs/reports/2026-10-05-linux-native-observer.md`) remains evidence for the code at
@@ -142,12 +155,13 @@ lane does not install; without it the profile records **UNRUN** with its reason 
 than skipping silently.
 
 Recorded contract fixture: `fixtures/native/linux/matrix/` (`a11y.json`, `frame.png`,
-`expected.json`) is the admitted matrix's shape, hand-written from it, and the unchanged
-generic judge reads it (`linux-agent.test.ts`, "Linux recorded matrix artifact"). It is a
+`expected.json`) is recorded from the hosted lane ([39359445974](https://github.com/f4ah6o/vlmkit/actions/runs/39359445974)'s
+retained tree), and the unchanged generic judge reads it (`linux-agent.test.ts`, "Linux recorded matrix artifact"). It is a
 contract fixture, not a live recording — the live tree is the artifact the CI lane
-retains. Digests of the committed files: `a11y.json` 4,983 bytes, `expected.json` 245
-bytes, `frame.png` 1,878 bytes (16-hex SHA-256 prefixes `5e5210de29b48ba5`,
-`5739b2b3214dc896`, `9d63c913ec38bdcd`).
+retains. The committed `a11y.json` is trimmed from the hosted tree (18 nodes: the identified
+controls, the tab list and its tabs/pages, the combo box and its list); `frame.png` is a
+synthetic calibration PNG for the image rect, not that run's screenshot, and
+`expected.json` says so.
 
 ## 5. Lane changes
 
