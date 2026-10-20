@@ -36,6 +36,7 @@ the artifact itself:
 | [39359445974](https://github.com/f4ah6o/vlmkit/actions/runs/39359445974) | observer FAIL, transport PASS | the same tab finding was then re-asserted by the normalized-role guard | tab found by announced page name, `page tab list` mapped to `group` |
 | [39359993201](https://github.com/f4ah6o/vlmkit/actions/runs/39359993201) | observer FAIL, transport PASS | the retained tree showed the tab list inheriting the second tab's identifier, so the selected tab had none | one tab identifier (`fixture.tabs`), asserted on the tab's `selected` state |
 | [39360303322](https://github.com/f4ah6o/vlmkit/actions/runs/39360303322) | observer FAIL, transport PASS | the tab identifier landed on the **page label** (`fixture.tabs.page`), and the tab list still kept the second tab's identifier | the tab is identified before the tab list's own name/id is set, and the tab list is cleared afterwards |
+| [39360516307](https://github.com/f4ah6o/vlmkit/actions/runs/39360516307) | observer FAIL, transport PASS | setting the notebook's accessible after the pages changed nothing: GTK3's notebook accessible *is* the tab list and takes the last tab's name and id | the tabs are identified by name and their `selected` state; no tab identifier is claimed |
 
 The retained artifact of 39359445974 was read to make the last two rows: the base
 profile's tree (7 nodes, identifier/actions/`disabled` present, no entry text) is the

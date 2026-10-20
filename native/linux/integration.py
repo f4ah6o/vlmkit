@@ -35,7 +35,10 @@ MATRIX = {
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
-    'fixture.tabs': dict(role='page tab', name='One', states=['selected']),
+    # GTK3 keeps neither tab identifier (the notebook's accessible takes the last
+    # tab's name and id), so the tabs are identified by name and the selected
+    # state is the claim.
+    'fixture.tab.one': dict(role='page tab', name='One', states=['selected']),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
@@ -57,14 +60,13 @@ observer_role = {
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
-    'fixture.tabs': ('page tab',),
 }
 
 # The normalized role expected for a matrix control, from its accepted names.
 MATRIX_ROLE = {
     'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
     'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
-    'fixture.mode.b': 'radio', 'fixture.tabs': 'tab',
+    'fixture.mode.b': 'radio', 'fixture.tab.one': 'tab',
     'fixture.choice': 'combobox', 'fixture.disabled': 'button', 'fixture.color': 'image',
 }
 # Controls a tree can lose without losing the test: the combo box's popup and a

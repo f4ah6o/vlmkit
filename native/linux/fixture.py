@@ -133,24 +133,18 @@ def matrix_window(title, x, y):
 
     # One accessible name per string, so a name the tree reports identifies one
     # control: the pages are "First page"/"Second page", the tabs "One"/"Two".
+    # No identifiers here: GTK3 gives the notebook's accessible (the tab list) the
+    # last tab's name and id, so a tab identifier would stand for its container.
     # The notebook's accessible is its tab list: it announces the current page.
     notebook = Gtk.Notebook()
     identify(notebook, 'Pages', 'fixture.pages')
     notebook.set_tab_pos(Gtk.PositionType.TOP)
     notebook.set_size_request(320, 120)
-    for label, identifier, text in (('One', 'fixture.tabs', 'First page'),
-                                    ('Two', 'fixture.tab.two', 'Second page')):
+    for label, text in (('One', 'First page'), ('Two', 'Second page')):
         page = Gtk.Label(label=text)
-        identify(page, text, identifier + '.page')
+        identify(page, text, 'fixture.page.' + label.lower())
         notebook.append_page(page, Gtk.Label(label=label))
-        # The tab gets an identifier and its own name. The notebook's accessible
-        # (the tab list) inherits the *last* tab's identifier, so it is cleared
-        # afterwards: a child's identifier must not stand for its container.
-        tab = page.get_parent().get_accessible()
-        tab.set_name(label)
-        if hasattr(tab, 'set_accessible_id'):
-            tab.set_accessible_id(identifier)
-    notebook.get_accessible().set_name('Pages')
+        page.get_parent().get_accessible().set_name(label)
     fixed.put(notebook, 20, 330)
 
     combo = Gtk.ComboBoxText()
