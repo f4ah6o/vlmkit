@@ -1,14 +1,16 @@
 # Linux native observer review: values, visit accounting and the fixture — 2026-10-20
 
-Status: implementation complete; the **pure Python suite passes** (37 tests, ~0.3 s),
-and four live GTK3 probes pass on a real X11/AT-SPI session. **The hosted X11 lane
-has not run on this source**, so the v2 PASS (`d8c3ddf0`,
-[run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462)) is
-not evidence for these changes. The full `integration.py` lane could not run in
+Status: implementation complete. The **pure Python suite passes** (37 tests, ~0.3 s),
+four live GTK3 probes pass on a real X11/AT-SPI session, and the **hosted X11 lane
+passed at `b851e98a`** — [run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215):
+`observer` and `transport` green, `report.json` `passed: true`, 16 of its 17 checks
+executed (the X11-only partial profile remains UNRUN without `python3-xlib`), and
+`ts-live/verdict.json` `success`. The local `integration.py` lane could not run in
 this sandbox: there is no `Xvfb`/`xcompmgr`, and the shell's PID namespace makes
 the X11 client's `_NET_WM_PID` differ from the process id AT-SPI reports, so the
 observer's same-PID association cannot bind (which is itself the partial-tree
-path, not a fixture failure).
+path, not a fixture failure). The hosted lane is the acceptance evidence for the
+GTK3/Xvfb/xcompmgr profile; the local probes are the reproduction of the defects.
 
 Scope: the fork's Linux observer (`native/linux/`) and the `vlmkit-a11y/1`
 artifacts it writes. The repository's other fork additions — the macOS
@@ -147,8 +149,9 @@ env -u DISPLAY python3 -m unittest discover -s native/linux -p 'test_*.py'
 | Live matrix replay of the 11 `MATRIX` controls | **PASS** — roles/names/states/actions, 25 nodes, `truncated: 0`, no text leak |
 | Live base fixture (`fixture.py`) | **PASS** — `fixture.level` role `slider`, value `4`, rect inside the 360x260 client |
 | NDJSON partial error | **PASS** — `NATIVE_AX_PARTIAL` with `details` counts |
-| Full `integration.py` X11 lane | **UNRUN** here (no Xvfb/xcompmgr; PID namespace separates the ids) |
-| Hosted `.github/workflows/linux-native-observer.yml` | **UNRUN** on this source |
+| Full `integration.py` X11 lane in this sandbox | **UNRUN** here (no Xvfb/xcompmgr; PID namespace separates the ids) |
+| Hosted `.github/workflows/linux-native-observer.yml` | **PASS** — [run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215): `observer` 1m21s + `transport` 30s; `report.json` `passed: true`, SHA-256 `b14be79a…`; artifact [12249706600](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215/artifacts/12249706600) |
+| Hosted fixture checks | **PASS** — 16 of 17 executed; the base profile includes `deterministic numeric value collected` (8 nodes, `truncated: 0`), the matrix keeps `fixture.pages`/`Pages` and its scroll bars read `0`; `ts-live/verdict.json` `success`; the X11-only partial profile is the one **UNRUN** |
 
 The permanent regressions are in the pure suite (`test_observer.py` pins the
 `AtspiValue` API shape, numeric formatting, text-role exclusion, one-charge-per-
@@ -158,8 +161,9 @@ roles and builds both fixtures) and in `integration.py` (the base profile assert
 
 ## Not claimed
 
-- No hosted PASS for this source. The next lane run is the evidence; this round
-  only proves the pure contracts and the live GTK probes above.
+- The hosted PASS covers only the GTK3/Xvfb/xcompmgr profile. The X11-only partial
+  profile is UNRUN (`python3-xlib` is not installed), and this sandbox's own
+  `integration.py` run is UNRUN; neither absence is a pass.
 - No Wayland/XWayland, other toolkits, scale != 1, physical input or broader
   desktop acceptance — unchanged from the v2 packet.
 - No review of `renderer-parity`, the macOS observer or the provenance policy

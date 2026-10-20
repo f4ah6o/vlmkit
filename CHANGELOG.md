@@ -25,8 +25,10 @@ Dates are YYYY-MM-DD.
   (`20,000` nodes, as documented, not half that), `NATIVE_AX_PARTIAL` carries the X11/AT-SPI
   window counts in the error's `details`, and the GTK matrix asserts the notebook's own identity
   (`fixture.pages`) instead of an identifier the fixture overwrote. The base fixture gains a
-  slider whose numeric value the live lane checks, and the fixture import smoke builds both
-  fixtures without waiting on `Gtk.main()`. See
+  slider whose numeric value the hosted lane checks, and the fixture import smoke builds both
+  fixtures without waiting on `Gtk.main()`. The hosted lane passed at `b851e98a`
+  ([run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215),
+  `observer` + `transport`), still only for the GTK3/Xvfb/xcompmgr profile. See
   [docs/reports/2026-10-20-linux-observer-review.md](docs/reports/2026-10-20-linux-observer-review.md).
 - Add `check renderer-parity` for deterministic reference-versus-generated component verification across manifest-declared viewports and focus, blur, hover, click, edit, and keyboard states. It compares exact RGBA pixels and dimensions, computed styles, layout, DOM/ARIA semantics, and document-wide action event sequences; viewport-scoped actions, click-count expectations, Kumo version, browser-resource failures, stalled gallery/font work, and incomplete captures are checked fail-closed. A paired unmodified capture preserves the authored caret color while the screenshot page suppresses blinking-caret raster differences.
 - Add native macOS `scan a11y macos:<bundle-id|pid=N|/path/App.app>` with a local

@@ -6,9 +6,11 @@ partial-tree and exit taxonomy, XWayland refusal) passed the hosted lane on `d8c
 ([run 39361423462](https://github.com/f4ah6o/vlmkit/actions/runs/39361423462)). A
 follow-up review on the same day fixed an `AtspiValue*`-as-value defect, a double visit
 charge and the fixture's notebook overwrite
-([review](../../docs/reports/2026-10-20-linux-observer-review.md)); **its hosted lane is
-still pending**, so the `d8c3ddf0` PASS is not evidence for that source. Broader
-Linux profiles remain subject to their own admission evidence.
+([review](../../docs/reports/2026-10-20-linux-observer-review.md)); **that source passed
+the hosted lane** ([run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215):
+`observer` + `transport`, `report.json` `passed: true`, `ts-live/verdict.json`
+`success`), still only for the GTK3/Xvfb/xcompmgr profile. Broader Linux profiles remain
+subject to their own admission evidence.
 
 Linux native is a first-class target alongside macOS. Eventual application/tool support
 covers macOS, Linux and Windows. New Windows work is deferred until higher-priority
@@ -68,7 +70,8 @@ authorization or silent browser fallback is introduced.
 
 Implementation round: [Linux native observer v2](../../docs/reports/2026-10-20-linux-native-observer-v2.md).
 Follow-up review: [Linux native observer review](../../docs/reports/2026-10-20-linux-observer-review.md)
-(pure suite and live probes PASS; the hosted lane for that source is **PENDING**).
+(pure suite, live probes and the [hosted lane](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215)
+PASS; the X11-only partial profile remains UNRUN).
 A checkbox below is only checked when the named evidence exists; a skipped or unrun lane
 is not a pass.
 

@@ -134,5 +134,8 @@ runner rather than only run as pure tests, is recorded in
 The follow-up review that fixed value reading (an interface pointer could become
 `value`), the double visit charge and the fixture notebook's own identity is
 [2026-10-20-linux-observer-review](../../docs/reports/2026-10-20-linux-observer-review.md);
-its hosted lane result is still pending, so none of it is acceptance evidence yet.
-Neither is a general desktop, Wayland, GPUI/MZed or physical-input support claim.
+its hosted lane passed at `b851e98a`
+([run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215):
+`observer` and `transport`, `report.json` `passed: true`), still only for the
+GTK3/Xvfb/xcompmgr profile. Neither is a general desktop, Wayland, GPUI/MZed or
+physical-input support claim.
