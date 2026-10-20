@@ -57,8 +57,7 @@ observer_role = {
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
-    # Some GTK versions put the tab identifier on the tab list, not the tab.
-    'fixture.tabs': ('page tab', 'page tab list'),
+    'fixture.tabs': ('page tab',),
 }
 
 # The normalized role expected for a matrix control, from its accepted names.

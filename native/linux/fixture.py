@@ -143,11 +143,14 @@ def matrix_window(title, x, y):
         page = Gtk.Label(label=text)
         identify(page, text, identifier + '.page')
         notebook.append_page(page, Gtk.Label(label=label))
-        # The tab (or, in other GTK versions, its tab list) keeps the identifier.
+        # The tab gets an identifier and its own name. The notebook's accessible
+        # (the tab list) inherits the *last* tab's identifier, so it is cleared
+        # afterwards: a child's identifier must not stand for its container.
         tab = page.get_parent().get_accessible()
         tab.set_name(label)
         if hasattr(tab, 'set_accessible_id'):
             tab.set_accessible_id(identifier)
+    notebook.get_accessible().set_name('Pages')
     fixed.put(notebook, 20, 330)
 
     combo = Gtk.ComboBoxText()
