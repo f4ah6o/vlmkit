@@ -19,7 +19,7 @@ toolkit-independent coordinates, and no row below claims a profile it did not ob
 | Fixture import smoke (base + matrix) | **SKIPPED** here, **UNRUN** hosted | GTK needs a display; the two skips are this test, which says so |
 | `linux-agent.test.ts` + `native-agent.test.ts` (vitest transport lane) | **UNRUN** | `node_modules` is absent in this sandbox and `pnpm`/`vp` cannot install (`EROFS` on the package-manager cache); the source was read, not executed |
 | GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **FAIL** on this source, [run 39357942889](https://github.com/f4ah6o/vlmkit/actions/runs/39357942889) | the matrix stopped at `('fixture.name', 'platform role', 'text', 'entry')`: GTK3 reports a GtkEntry labelled by its accessible name alone as role `text`. The matrix now accepts both names for that control; re-run pending |
-| Semantics-matrix live assertions | **FAIL → re-run pending** | [39358995057](https://github.com/f4ah6o/vlmkit/actions/runs/39358995057) then stopped at `('fixture.name', 'role', 'text')`; the fixture now names the entry's ATK role (`Atk.Role.ENTRY`) so GTK announces an entry |
+| Semantics-matrix live assertions | **FAIL → re-run pending** | [39359119107](https://github.com/f4ah6o/vlmkit/actions/runs/39359119107) still announced `fixture.name` as `text` even with `Atk.Role.ENTRY` named; an accepted alternative name is now recorded as announced rather than required to normalize to the recorded role |
 | Recorded fixture findings (`fixtures/native/linux/matrix`) | expectations re-derived by an ad-hoc port of the judge's two rules; the vitest assertion is **UNRUN** | the port matched `expected.json` (unlabelled `window[0]>button[3]`, unreachable `window[0]>text[1]`, no small targets) |
 
 A skipped lane is not a pass. The previous round's hosted PASS
@@ -133,12 +133,12 @@ bytes, `frame.png` 1,878 bytes (16-hex SHA-256 prefixes `5e5210de29b48ba5`,
 
 `.github/workflows/linux-native-observer.yml`:
 
-- measured on the first two runs: a `GtkEntry` named only through its accessible name
-  is announced as `text` by GTK3 — not `entry`. Accepting that name silently would let
-  the tree call a missing entry a label, so the fixture names the entry's ATK role
-  (`Atk.Role.ENTRY`) and the matrix asserts normalized `textfield`; the accepted
-  platform-role names per control (`MATRIX_ROLE_NAMES`) are kept for the hidden entry,
-  which the toolkit may report as either name;
+- measured on three runs: GTK3 announces the matrix's `GtkEntry` as `text`, not `entry`,
+  even after the fixture names `Atk.Role.ENTRY`. The matrix now accepts the toolkit's
+  own name for a control (`MATRIX_ROLE_NAMES`) and records the normalized role of what
+  was announced, keeping the claims it can still make for that node: its name, its
+  states, the exact role each accepted name normalizes to, and that it carries no
+  value. A GTK4 entry will need the same treatment once that toolkit is qualified;
 - the fixture step now produces both profiles under `test-results/native/linux/`
   (`base` beside the output, `matrix/` under it);
 - a step records `SHA256SUMS` for the retained artifact;

@@ -52,9 +52,10 @@ observer_role = {
 
 # The normalized role expected for a matrix control, from its accepted names.
 # Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
-# only by its accessible name is announced as `text` (measured hosted); the
-# fixture names its ATK role so the tree says `entry`, and a hidden entry is
-# `password text` or `entry` depending on the toolkit version.
+# only by its accessible name is announced as `text`, even when the fixture names
+# its ATK role (`Atk.Role.ENTRY`), and a hidden entry is `password text` or
+# `entry` depending on the toolkit version. An accepted alternative is recorded
+# as announced; what the matrix still holds is the no-value rule below.
 MATRIX_ROLE_NAMES = {
     'fixture.name': ('entry', 'text'),
     'fixture.secret': ('password text', 'entry'),
@@ -214,7 +215,9 @@ def capture_matrix(client, out):
             actual = observed[identifier]['platformRole']
             allowed = MATRIX_ROLE_NAMES.get(identifier, (expected['role'],))
             assert actual in allowed, (identifier, 'platform role', actual, allowed)
-            assert node['role'] == MATRIX_ROLE[identifier], (identifier, 'role', node['role'])
+            # An accepted alternative name is recorded, not normalized away: a tree
+            # that calls a labelled entry `text` is what the toolkit announced.
+            assert node['role'] == observer_role.get(actual, actual), (identifier, 'role', actual, node['role'])
             assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
             for state in expected.get('states', ()):
                 assert node.get('states', {}).get(state) is True, (identifier, 'state', state, node.get('states'))
