@@ -156,7 +156,10 @@ def association_failure(accessibles, windows):
     without a usable bridge, a partial/absent tree) from "both saw it and the
     geometry refused it", so neither reads as an app that has no window.
     """
-    if not windows or associated_pids(accessibles, windows):
+    if not windows:
+        return None
+    linked = associate(accessibles, windows)
+    if len(linked) == len(windows) == len(accessibles):
         return None
     if not accessibles:
         return Failure('NATIVE_AX_PARTIAL',
@@ -508,15 +511,12 @@ class X11:
         DISPLAY pointing there is refused even when no Wayland env var leaks
         into the process: its windows are Wayland surfaces under another name.
         """
-        atom = self.fn('XInternAtom', U, C.c_char_p, I)(b'XWAYLAND', 1)
-        if not atom:
-            return False
-        opcode, event, error, present = I(), I(), I(), I()
-        if not self.fn('XQueryExtension', I, U, C.POINTER(I), C.POINTER(I), C.POINTER(I))(
-                atom, C.byref(opcode), C.byref(event), C.byref(error)):
-            return False
+        opcode, event, error = I(), I(), I()
+        present = self.fn('XQueryExtension', I, C.c_char_p, C.POINTER(I), C.POINTER(I), C.POINTER(I))(
+            b'XWAYLAND', C.byref(opcode), C.byref(event), C.byref(error))
         self.sync()
-        return bool(opcode.value)
+        return bool(present)
+
 
     def sync(self):
         self.fn('XSync', I, I)(0)
@@ -929,7 +929,7 @@ class Agent:
             # *why*, instead of reading an empty list as "the app has no window".
             session['diagnostics'] = [dict(code=partial.code, message=str(partial), **evidence)]
         linked = associate(accessibles, clients)
-        if not linked:
+        if partial or not linked:
             # The counts travel with the error as `details`, so the caller does
             # not have to parse the message (or a session it cannot see).
             raise Failure(partial.code if partial else 'NATIVE_WINDOW_NOT_FOUND',
@@ -950,6 +950,12 @@ class Agent:
             self.a.begin_request()
         try:
             return self._dispatch(method, params)
+        except Failure:
+            # An exited target can invalidate AT-SPI or X11 before their later
+            # identity checks run; report the exit rather than a stale backend error.
+            if method in ('window.list', 'window.select', 'snapshot.capture') and params.get('sessionId') in self.sessions:
+                self.session(params)
+            raise
         finally:
             if self.a:
                 self.a.release()
@@ -1008,6 +1014,7 @@ class Agent:
             fail('NATIVE_INVALID_PARAMS', 'Distinct absolute tree and PNG output paths are required')
         self.session(params)
         nodes, counts, diagnostics = collect(self.a, w['obj'], s['pid'], w['rect'], max_depth, max_nodes)
+        self.session(params)
         if not nodes:
             for diagnostic in diagnostics:
                 if diagnostic['code'] in HARD_BUDGET_CODES + ('NATIVE_AX_TRUNCATED',):
@@ -1015,13 +1022,13 @@ class Agent:
             fail('NATIVE_AX_CANNOT_COMPLETE', 'No accessible nodes with trustworthy geometry')
         # An app that exits mid-capture is reported as exited, not as an X11
         # window that changed shape: the caller's next step differs.
-        process_identity(s['pid'])
+        self.session(params)
         # Revalidate accessibility identity/geometry after traversal, before pixels.
         if self.a.pid(w['obj']) != s['pid'] or self.a.bounds(w['obj'], critical=True) != w['rect']:
             fail('NATIVE_WINDOW_CHANGED', 'AT-SPI selected window changed during traversal')
         self.session(params)
         png = self.x.capture(w['xid'], s['pid'], w['rect'], s['compositor'])
-        process_identity(s['pid'])
+        self.session(params)
         viewport = dict(width=w['rect']['width'], height=w['rect']['height'])
         tree = dict(format='vlmkit-a11y/1', platform='linux', viewport=viewport, scale=1,
                     frame=os.path.relpath(outputs[1], Path(outputs[0]).parent), nodes=nodes)

@@ -369,32 +369,45 @@ def partial_association(out):
     The observer must say NATIVE_AX_PARTIAL, never `NATIVE_WINDOW_NOT_FOUND`
     (which reads as "the app has no window") and never a fabricated tree.
     """
-    try:
-        import Xlib.display  # noqa: F401  (the X11-only fixture's client library)
-    except ImportError:
-        return dict(outcome='UNRUN', reason='python3-xlib is not installed; no X11-only fixture available')
+    import Xlib.display  # noqa: F401  (required: missing dependencies fail the lane)
     script = (
-        'import Xlib.display, time\n'
+        'import Xlib.display, Xlib.Xatom, os, time\n'
         'd = Xlib.display.Display()\n'
         's = d.screen()\n'
         'w = s.root.create_window(0, 0, 80, 60, 0, s.root_depth, 1)\n'
+        'w.change_property(d.intern_atom("_NET_WM_PID"), Xlib.Xatom.CARDINAL, 32, [os.getpid()])\n'
         'w.map(); d.sync(); print("ready", flush=True); time.sleep(60)\n'
     )
     process = subprocess.Popen([sys.executable, '-c', script], stdout=subprocess.PIPE, text=True)
+    evidence = dict(outcome='FAIL', profile='X11-only client, no AT-SPI bridge', pid=process.pid)
+    client, x = None, None
     try:
         assert select.select([process.stdout], [], [], 10)[0], 'X11-only fixture startup timed out'
         assert process.stdout.readline().strip() == 'ready'
+        x = X11()
+        windows = x.windows(process.pid)
+        evidence['x11Windows'] = windows
+        assert len(windows) == 1, windows
+        assert x.pid(windows[0]['xid']) == process.pid
         client = Client()
         try:
             hello = client.request('hello')
             session = client.request('target.open', dict(target=dict(by='pid', pid=process.pid)))
             response = client.request('window.list', dict(sessionId=session['sessionId']), error='NATIVE_AX_PARTIAL')
-            (out / 'partial.json').write_text(json.dumps(dict(hello=hello, response=response), indent=2) + '\n')
-            return dict(outcome='PASS', profile='X11-only client, no AT-SPI bridge',
-                        result=response['error'])
+            details = response['error']['details']
+            assert details == dict(x11Windows=1, atspiWindows=0, atspiApps=0), details
+            client.request('window.select', dict(sessionId=session['sessionId'], selector=None), error='NATIVE_AX_PARTIAL')
+            client.request('session.close', dict(sessionId=session['sessionId']))
+            assert process.poll() is None, 'Closing a session must not terminate the client'
+            evidence.update(outcome='PASS', hello=hello, response=response)
+            return evidence
         finally:
             client.close()
     finally:
+        evidence['protocol'] = client.history if client else []
+        (out / 'partial.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        if x:
+            x.fn('XCloseDisplay', I)()
         stop(process)
 
 
@@ -422,6 +435,7 @@ def main():
         report['checks'].append('entry text and password values never collected')
         partial = partial_association(out)
         report['profiles']['partial-association'] = partial
+        assert partial['outcome'] == 'PASS', partial
         report['checks'].append(f"partial association: {partial['outcome']} ({partial.get('reason', 'NATIVE_AX_PARTIAL')})")
         report.update(passed=True)
         (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')

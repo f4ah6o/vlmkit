@@ -10,6 +10,8 @@ recorded as SKIPPED, never as a pass, because the live lane owns that evidence.
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -69,6 +71,18 @@ class FixtureTests(unittest.TestCase):
     def test_sources_compile(self):
         for name in ("fixture.py", "integration.py", "observer.py"):
             compile((HERE / name).read_text(), name, "exec")
+
+    def test_partial_profile_requires_xlib(self):
+        import integration
+        import builtins
+        original_import = builtins.__import__
+        def without_xlib(name, *args, **kwargs):
+            if name == 'Xlib.display':
+                raise ImportError('missing python3-xlib')
+            return original_import(name, *args, **kwargs)
+        with tempfile.TemporaryDirectory() as directory, patch('builtins.__import__', side_effect=without_xlib):
+            with self.assertRaisesRegex(ImportError, 'missing python3-xlib'):
+                integration.partial_association(Path(directory))
 
     def test_integration_declares_every_matrix_identifier(self):
         import integration

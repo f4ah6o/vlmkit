@@ -169,6 +169,77 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(failure.code, code)
             self.assertEqual(str(failure), code)
 
+    def test_one_linked_window_does_not_hide_an_unassociated_client(self):
+        agent = o.Agent()
+        agent.a, agent.x = Mock(), Mock()
+        bounds = o.rect(0, 0, 80, 60)
+        agent.a.windows.return_value = ([dict(obj=9, pid=100, rect=bounds,
+                                               index=0, title='linked', states={})], 1)
+        agent.x.windows.return_value = [dict(xid=5, pid=100, rect=bounds),
+                                        dict(xid=6, pid=100, rect=o.rect(100, 0, 80, 60))]
+        with self.assertRaises(o.Failure) as caught:
+            agent.windows(dict(pid=100))
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_PARTIAL')
+        self.assertEqual(caught.exception.details,
+                         dict(x11Windows=2, atspiWindows=1, atspiApps=1))
+
+    def test_duplicate_geometry_is_partial_not_window_not_found(self):
+        agent = o.Agent()
+        agent.a, agent.x = Mock(), Mock()
+        bounds = o.rect(0, 0, 80, 60)
+        agent.a.windows.return_value = ([dict(obj=9, pid=100, rect=bounds)], 1)
+        agent.x.windows.return_value = [dict(xid=5, pid=100, rect=bounds),
+                                        dict(xid=6, pid=100, rect=bounds)]
+        with self.assertRaises(o.Failure) as caught:
+            agent.windows(dict(pid=100))
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_PARTIAL')
+
+    def test_exit_during_enumeration_replaces_stale_backend_error(self):
+        agent = o.Agent()
+        agent.a, agent.x = Mock(), Mock()
+        agent.sessions['s'] = dict(pid=100, identity='start', selected=None)
+        for method in ('window.list', 'window.select'):
+            with self.subTest(method=method), patch.object(agent, 'backend'), \
+                    patch.object(agent, 'windows', side_effect=o.Failure('NATIVE_AX_CANNOT_COMPLETE', 'stale bus')), \
+                    patch.object(o, 'process_identity', side_effect=['start', o.Failure('NATIVE_TARGET_EXITED', 'gone')]):
+                with self.assertRaises(o.Failure) as caught:
+                    agent.dispatch(method, dict(sessionId='s'))
+                self.assertEqual(caught.exception.code, 'NATIVE_TARGET_EXITED')
+
+    def test_exit_during_empty_traversal_or_pixels_never_writes_artifacts(self):
+        for stage in ('empty-tree', 'pixels'):
+            with self.subTest(stage=stage):
+                agent = o.Agent()
+                agent.a, agent.x = Mock(), Mock()
+                bounds = o.rect(0, 0, 80, 60)
+                agent.a.pid.return_value = 100
+                agent.a.bounds.return_value = bounds
+                agent.sessions['s'] = dict(pid=100, identity='start', selected='w',
+                                           selectedObj=9, compositor=7)
+                window = dict(obj=9, xid=5, pid=100, rect=bounds, windowId='w')
+                alive = [True]
+                def identity(_pid):
+                    if not alive[0]:
+                        raise o.Failure('NATIVE_TARGET_EXITED', 'gone')
+                    return 'start'
+                def collect(*_args):
+                    if stage == 'empty-tree':
+                        alive[0] = False
+                        return [], dict(nodes=0, truncated=0, attributeErrors=1), []
+                    return [dict(path='window[0]')], dict(nodes=1, truncated=0, attributeErrors=0), []
+                def capture(*_args):
+                    alive[0] = False
+                    raise o.Failure('NATIVE_WINDOW_CHANGED', 'X11 window vanished')
+                agent.x.capture.side_effect = capture
+                with patch.object(agent, 'backend'), patch.object(agent, 'windows', return_value=[window]), \
+                        patch.object(o, 'process_identity', side_effect=identity), \
+                        patch.object(o, 'collect', side_effect=collect), patch.object(o, 'write_artifacts') as write:
+                    with self.assertRaises(o.Failure) as caught:
+                        agent.dispatch('snapshot.capture', dict(sessionId='s', windowId='w',
+                                       outputTreePath='/unused/tree.json', outputPngPath='/unused/frame.png'))
+                    self.assertEqual(caught.exception.code, 'NATIVE_TARGET_EXITED')
+                    write.assert_not_called()
+
     def test_no_input_or_termination(self):
         agent = o.Agent()
         hello = agent.dispatch('hello', {})
@@ -582,7 +653,8 @@ class MappingTests(unittest.TestCase):
         class Query:
             def __init__(self, present):
                 self.present = present
-            def __call__(self, _atom, opcode, _event, _error):
+            def __call__(self, name, opcode, _event, _error):
+                assert name == b'XWAYLAND'
                 # ctypes.CArgObject hands back a byref(); write through it as Xlib would.
                 opcode._obj.value = 133
                 return 1 if self.present else 0
@@ -591,9 +663,8 @@ class MappingTests(unittest.TestCase):
         present = [False]
         def fn(name, *_types):
             calls.append(name)
-            if name == 'XInternAtom':
-                return lambda *_args: 77
             if name == 'XQueryExtension':
+                self.assertEqual(_types, (o.I, o.C.c_char_p, o.C.POINTER(o.I), o.C.POINTER(o.I), o.C.POINTER(o.I)))
                 return Query(present=present[0])
             return lambda *_args: 0  # XSync
         x.fn = fn
