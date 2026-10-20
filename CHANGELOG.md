@@ -5,6 +5,31 @@ Dates are YYYY-MM-DD.
 
 ## Unreleased
 
+- Linux native observer (`scan a11y linux:pid=N`): bounded AT-SPI traversal is now lazy with
+  request-wide visited/reference budgets (the selected window frame is charged too, and only a
+  hard budget stops traversal — an attribute failure is a diagnostic, not a dropped subtree).
+  Accessibility association that cannot bind an X11 client to an AT-SPI window fails closed as
+  `NATIVE_AX_PARTIAL` with the window counts instead of reading as an app with no window; a
+  target that exits mid-capture is `NATIVE_TARGET_EXITED`; an Xwayland `DISPLAY` is refused by
+  the server's `XWAYLAND` extension. Entry and password text are never collected. A GTK
+  semantics matrix fixture (`native/linux/fixture.py --matrix`) asserts each control's role,
+  name, states and native actions on the hosted X11 lane (passed on `d8c3ddf0`), alongside a
+  contract fixture recorded from that lane (`fixtures/native/linux/matrix/`) the unchanged
+  generic judge reads. See
+  [native/linux/README.md](native/linux/README.md) and
+  [docs/reports/2026-10-20-linux-native-observer-v2.md](docs/reports/2026-10-20-linux-native-observer-v2.md).
+- Fix the Linux native observer's values and traversal accounting: `atspi_accessible_get_value`
+  returns an `AtspiValue*`, not a scalar, so a slider or scroll bar could carry a memory address
+  as `value`; it now reports the interface's finite `atspi_value_get_current_value` number, and
+  text roles are never probed. A traversed node is charged to the visit budget **once**
+  (`20,000` nodes, as documented, not half that), `NATIVE_AX_PARTIAL` carries the X11/AT-SPI
+  window counts in the error's `details`, and the GTK matrix asserts the notebook's own identity
+  (`fixture.pages`) instead of an identifier the fixture overwrote. The base fixture gains a
+  slider whose numeric value the hosted lane checks, and the fixture import smoke builds both
+  fixtures without waiting on `Gtk.main()`. The hosted lane passed at `b851e98a`
+  ([run 39391132215](https://github.com/f4ah6o/vlmkit/actions/runs/39391132215),
+  `observer` + `transport`), still only for the GTK3/Xvfb/xcompmgr profile. See
+  [docs/reports/2026-10-20-linux-observer-review.md](docs/reports/2026-10-20-linux-observer-review.md).
 - Add `check renderer-parity` for deterministic reference-versus-generated component verification across manifest-declared viewports and focus, blur, hover, click, edit, and keyboard states. It compares exact RGBA pixels and dimensions, computed styles, layout, DOM/ARIA semantics, and document-wide action event sequences; viewport-scoped actions, click-count expectations, Kumo version, browser-resource failures, stalled gallery/font work, and incomplete captures are checked fail-closed. A paired unmodified capture preserves the authored caret color while the screenshot page suppresses blinking-caret raster differences.
 - Add native macOS `scan a11y macos:<bundle-id|pid=N|/path/App.app>` with a local
   Swift AX/ScreenCaptureKit observer (macOS 14+), passive permission diagnostics,

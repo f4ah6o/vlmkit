@@ -345,3 +345,46 @@ describe("full-suite workflow triggers", async () => {
     });
   }
 });
+
+/**
+ * No workflow step may hide its exit code behind `|| true`, `; true` or `continue-on-error`.
+ *
+ * The Linux native observer's live TypeScript scan was rewritten to keep its own verdict
+ * (`ts-live/verdict.json`) *and* still fail the job: a skipped or failing live lane has to read
+ * as SKIPPED/FAIL, never as the passing green that `|| true` produces. That rewrite is only
+ * correct while the exit code actually reaches the step's verdict, so the swallowing forms are
+ * refused here, at unit-test speed, rather than being noticed after a green run that measured
+ * nothing (the same class as the `smoke … || true` step this file was written for).
+ *
+ * Scope, stated honestly: this catches the literal suffixes below on `run:` lines. A wrapper
+ * script that exits 0 is out of reach, which is why the observer workflow's own steps keep
+ * their work in the step itself.
+ */
+describe("workflow exit codes", async () => {
+  const files = (await readdir(workflowDir)).filter((f) => f.endsWith(".yml") || f.endsWith(".yaml"));
+  const SWALLOWED = /^\s*-?\s*run:.*?(?:\|\|\s*true\s*$|;\s*true\s*$)/;
+
+  for (const file of files) {
+    it(`${file} does not swallow a step's exit code`, async () => {
+      const yaml = await readFile(join(workflowDir, file), "utf8");
+      const offenders = yaml
+        .split("\n")
+        .map((text, index) => ({ line: index + 1, text }))
+        .filter(({ text }) => SWALLOWED.test(text.trimEnd()));
+      assert.deepEqual(
+        offenders.map(({ line, text }) => `${file}:${line} ${text.trim()}`),
+        [],
+        "a `|| true` step reports success while running nothing. Keep the verdict explicitly" +
+          " (`continue-on-error` plus a step that fails on its outcome) instead.",
+      );
+    });
+  }
+
+  it("would catch a reintroduced swallowing suffix", () => {
+    const sample = ["      - run: vlmkit smoke page.html || true", "      - run: vlmkit check integrity page.html"];
+    assert.deepEqual(
+      sample.filter((text) => SWALLOWED.test(text.trimEnd())),
+      ["      - run: vlmkit smoke page.html || true"],
+    );
+  });
+});

@@ -160,3 +160,27 @@ reports truncation/attribute errors as `native-incomplete`; inspect the scan
 result before judging a partial artifact. See [native setup and acceptance
 checks](../native/macos/README.md) for the stdio protocol, fixture, permissions,
 and pixel alignment tests.
+
+## Native Linux scan (composited X11, attach by PID)
+
+`native/linux/observer.py` is a dependency-free Python stdio observer over
+AT-SPI and XComposite. It captures the selected client window and writes the
+same `vlmkit-a11y/1` file, so `check a11y tree` judges it unchanged:
+
+```sh
+python3 -m unittest discover -s native/linux -p 'test_*.py' -v   # pure contracts, no display
+VLMKIT_NATIVE_AGENT=native/linux/observer.py \
+  vlmkit scan a11y linux:pid=123 --out a11y.json --frame frame.png
+vlmkit check a11y tree a11y.json
+```
+
+Linux values are **numeric and never text**: the profile observes roles, names,
+toolkit identifiers, states and native `atspi:` action names, and an entry's text
+is content, not state (a `password text` node is never read; GTK3 can announce a
+labelled entry as `text`, so the text roles are excluded too). A control whose
+AT-SPI value is a finite number (a slider, a progress bar, a spin button, a
+scroll bar) reports that number as `value`. A toolkit window that X11 sees but
+AT-SPI does not, or whose geometry disagrees, is reported as `NATIVE_AX_PARTIAL`
+with the window counts in the error's `details`, and never becomes an empty tree.
+See [native/linux/README.md](../native/linux/README.md) for the admitted profile
+and its limits.

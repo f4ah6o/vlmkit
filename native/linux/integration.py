@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Run under dbus-run-session + Xvfb. Artifacts contain only this fixture."""
+"""Run under dbus-run-session + Xvfb. Artifacts contain only these fixtures.
+
+Two fixtures are driven against the real observer:
+  * the base window (image / named / unnamed / entry / disabled) under a green
+    foreign occluder, proving the selected client's own backing is captured;
+  * the semantics matrix window, proving what AT-SPI announces for each control
+    maps honestly into `vlmkit-a11y/1` (roles, identifiers, states, native action
+    names) and that entry text and password values are never collected.
+"""
 import argparse
 import json
 import os
@@ -15,6 +23,57 @@ import zlib
 from observer import X11, I
 
 HERE = Path(__file__).resolve().parent
+
+# What the matrix window is expected to announce, per identifier. Roles are the
+# AT-SPI role names the fixture's GTK widgets produce; the run records the actual
+# tree, so a divergence fails here instead of being silently accepted.
+MATRIX = {
+    'fixture.save': dict(role='push button', name='Save', actions_any=['atspi:click']),
+    'fixture.name': dict(role='entry', name='Name'),
+    'fixture.secret': dict(role='password text', name='Secret'),
+    'fixture.remember': dict(role='check box', name='Remember', states=['checked']),
+    'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
+    'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
+    'fixture.mode.b': dict(role='radio button', name='Mode B'),
+    # The notebook's accessible is its tab list and keeps the notebook's own
+    # name/id when the tab labels are named but not identified (measured on
+    # GTK3 3.24). Its selected tab and selected page label are still asserted.
+    'fixture.pages': dict(role='page tab list', name='Pages', selected_page='First page'),
+    'fixture.choice': dict(role='combo box', name='Choice'),
+    'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
+    'fixture.color': dict(role='image', name='Fixture color'),
+}
+# The normalized role(s) a matrix control may produce, one per accepted platform
+# role name (see MATRIX_ROLE_NAMES). GTK3 announces a labelled GtkEntry as
+# `text`, which normalizes to `text`, so the entry accepts both names and both
+# results; every other control has one.
+MATRIX_ROLE = {
+    'fixture.save': ('button',), 'fixture.name': ('textfield', 'text'),
+    'fixture.secret': ('textfield',), 'fixture.remember': ('checkbox',),
+    'fixture.toggle': ('button',), 'fixture.mode.a': ('radio',), 'fixture.mode.b': ('radio',),
+    'fixture.pages': ('group',), 'fixture.choice': ('combobox',),
+    'fixture.disabled': ('button',), 'fixture.color': ('image',),
+}
+
+# Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
+# only by its accessible name is announced as `text`, even when the fixture names
+# its ATK role (`Atk.Role.ENTRY`), and a hidden entry is `password text` or
+# `entry` depending on the toolkit version. An accepted alternative is recorded
+# as announced; what the matrix still holds is the no-value rule below.
+MATRIX_ROLE_NAMES = {
+    'fixture.name': ('entry', 'text'),
+    'fixture.secret': ('password text', 'entry'),
+}
+
+
+def accepted_roles(identifier):
+    """The platform role names a matrix control may announce."""
+    return MATRIX_ROLE_NAMES.get(identifier, (MATRIX[identifier]['role'],))
+
+
+# The fixture needs the system PyGObject; the observer itself is stdlib-only, so
+# the two deliberately do not use the same interpreter.
+GTK_PYTHON = '/usr/bin/python3'
 
 
 class Client:
@@ -46,11 +105,17 @@ class Client:
 
 def fixture(*args):
     env = dict(os.environ, GTK_MODULES='gail:atk-bridge', NO_AT_BRIDGE='0', GDK_BACKEND='x11')
-    p = subprocess.Popen(['/usr/bin/python3', str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
+    p = subprocess.Popen([GTK_PYTHON, str(HERE / 'fixture.py'), *args], env=env, stdout=subprocess.PIPE, text=True)
     assert select.select([p.stdout], [], [], 15)[0], 'GTK fixture startup timed out'
     ready = json.loads(p.stdout.readline())
     assert ready['ready'] and ready['pid'] == p.pid
     return p
+
+
+def stop(process):
+    if process and process.poll() is None:
+        process.terminate()
+        process.wait(timeout=5)
 
 
 def read_rgb_png(path):
@@ -102,30 +167,127 @@ def verify_occlusion_setup(x, selected, target_pid, foreign_pid):
                 foreignStackIndex=foreign_index, rootChildCount=len(root_children))
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--out', default='test-results/native/linux')
-    args = parser.parse_args()
-    out = Path(args.out).resolve()
-    out.mkdir(parents=True, exist_ok=True)
-    client, app, foreign = Client(), None, None
-    x = None
-    report = dict(platform='linux', backend='x11', checks=[])
+def wait_windows(client, sid, count, deadline=5.0):
+    """A toolkit registers its accessibility window after the X11 one exists."""
+    end = time.monotonic() + deadline
+    windows = []
+    while time.monotonic() < end:
+        windows = client.request('window.list', dict(sessionId=sid))
+        if len(windows) == count:
+            return windows
+        time.sleep(0.1)
+    return windows
+
+
+def by_identifier(tree):
+    found = {}
+    for node in tree['nodes']:
+        identifier = node.get('identifier')
+        if identifier:
+            assert identifier not in found, ('A matrix control identifier is duplicated', identifier, node['path'])
+            found[identifier] = node
+    return found
+
+
+def capture_matrix(client, out):
+    """The semantics matrix: one window, every control's announced facts."""
+    app, x = fixture('--matrix'), None
     try:
-        hello = client.request('hello')
-        assert hello['platform'] == 'linux' and hello['capabilities']['physicalPointer'] is False
-        doctor = client.request('doctor', dict(prompt=False))
-        assert doctor['accessibility']['available'] and doctor['screenCapture']['available'], doctor
+        session = client.request('target.open', dict(target=dict(by='pid', pid=app.pid)))
+        sid = session['sessionId']
+        windows = wait_windows(client, sid, 1)
+        assert len(windows) == 1, windows
+        selected = windows[0]
+        client.request('window.select', dict(sessionId=sid, selector=dict(by='window-id', windowId=selected['windowId'])))
+        result = client.request('snapshot.capture', dict(
+            sessionId=sid, windowId=selected['windowId'],
+            outputTreePath=str(out / 'a11y.json'), outputPngPath=str(out / 'frame.png')))
+        tree = json.loads((out / 'a11y.json').read_text())
+        nodes = by_identifier(tree)
+        observed = {}
+        for identifier, expected in MATRIX.items():
+            node = nodes.get(identifier)
+            assert node is not None, ('Matrix control missing from the tree', identifier, sorted(tree))
+            observed[identifier] = dict(role=node['role'], platformRole=node.get('platformRole'),
+                                        name=node.get('name'), states=node.get('states'),
+                                        actions=node.get('actions'),
+                                        rect=node['rect'], value=node.get('value'))
+            # GTK announces a hidden-entry as `password text` via get_role_name but
+            # may report `entry` as its AtkRole; both map to `textfield` and neither
+            # carries a value, so both are accepted by name.
+            actual = observed[identifier]['platformRole']
+            allowed = accepted_roles(identifier)
+            assert actual in allowed, (identifier, 'platform role', actual, allowed)
+            if 'selected_page' in expected:
+                # Exactly one tab is selected, and it carries the selected page's
+                # label. A tab's own name is recorded in `observed`, not required:
+                # GTK versions differ on whether the tab label's name is announced.
+                tabs = [n for n in tree['nodes'] if n.get('platformRole') == 'page tab'
+                        and n['path'].startswith(node['path'] + '>')]
+                assert tabs, (identifier, 'no page tab announced under the notebook', node['path'])
+                chosen = [t for t in tabs if t.get('states', {}).get('selected') is True]
+                assert len(chosen) == 1, (identifier, 'exactly one tab must be selected', [t['path'] for t in tabs])
+                assert any(n.get('name') == expected['selected_page'] and n['path'].startswith(chosen[0]['path'] + '>')
+                           for n in tree['nodes']), (identifier, 'the selected tab must carry the selected page label',
+                                                     expected['selected_page'], chosen[0]['path'])
+            # An accepted alternative name is recorded, not normalized away: a tree
+            # that calls a labelled entry `text` is what the toolkit announced.
+            assert node['role'] in MATRIX_ROLE[identifier], (identifier, 'role', actual, node['role'])
+            if 'name' in expected:
+                assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
+            for state in expected.get('states', ()):
+                assert node.get('states', {}).get(state) is True, (identifier, 'state', state, node.get('states'))
+            for state in ('checked', 'selected', 'expanded', 'focused', 'hidden', 'disabled'):
+                assert isinstance(node.get('states', {}).get(state, False), bool), (identifier, 'state value', state, node.get('states'))
+            for action in expected.get('actions_any', ()):
+                assert action in (node.get('actions') or ()), (identifier, 'action', action, node.get('actions'))
+        # Values: entry text is content and is never collected; a password value
+        # must never be collected, and neither may appear anywhere in the file.
+        for identifier in ('fixture.name', 'fixture.secret'):
+            assert observed[identifier]['value'] is None, (identifier, 'value must not be collected', observed[identifier]['value'])
+        raw = (out / 'a11y.json').read_text()
+        assert 'hunter2' not in raw and 'Fixture value' not in raw, 'Entry text leaked into the accessibility tree'
+        # The unnamed button is still unnamed: the matrix plants one for the judge.
+        unnamed = [n for n in tree['nodes'] if n['role'] == 'button' and not (n.get('name') or '').strip()]
+        assert unnamed, 'The matrix must plant one unnamed button'
+        width, height, pixel = read_rgb_png(out / 'frame.png')
+        assert (width, height) == (tree['viewport']['width'], tree['viewport']['height']) == (360, 560), (width, height, tree['viewport'])
+        x = X11()
+        on_screen = x.geometry(selected['screenCaptureWindowId'])
+        assert on_screen is not None and on_screen['width'] == 360 and on_screen['height'] == 560, on_screen
+        color = observed['fixture.color']['rect']
+        point = (int(color['left'] + color['width'] / 2), int(color['top'] + color['height'] / 2))
+        assert pixel(*point) == (255, 0, 0), ('Matrix image rect must align with its red pixels', point, pixel(*point))
+        report = dict(pid=app.pid, windowId=selected['windowId'], capture=result, tree=tree['nodes'],
+                      observed=observed, unnamedButtons=[n['path'] for n in unnamed],
+                      alignment=dict(imageRect=color, imagePoint=list(point), imageRgb=list(pixel(*point))))
+        client.request('session.close', dict(sessionId=sid))
+        assert app.poll() is None, 'close must detach, never terminate the target'
+        report['checks'] = ['one-window selection', 'matrix roles/names/identifiers/states/actions',
+                            'entry text and password values never collected',
+                            'unnamed button preserved', 'image rect aligns with red pixels',
+                            'close detaches only']
+        return report
+    finally:
+        if x:
+            x.fn('XCloseDisplay', I)()
+        stop(app)
+
+
+def capture_base(client, out):
+    """The admitted slice: association, occlusion, pixels, bounds, exits."""
+    app, foreign, x = None, None, None
+    report = dict(checks=[])
+    try:
         app = fixture('--two')
         session = client.request('target.open', dict(target=dict(by='pid', pid=app.pid)))
         sid = session['sessionId']
-        for _ in range(30):
-            windows = client.request('window.list', dict(sessionId=sid))
-            if len(windows) == 2:
-                break
-            time.sleep(0.1)
+        windows = wait_windows(client, sid, 2)
         assert len(windows) == 2, windows
         assert windows[0]['title'] == windows[1]['title'], 'Fixture has duplicate titles intentionally'
+        # Two ordinary windows with nothing focused: never pick one silently.
+        client.request('window.select', dict(sessionId=sid, selector=None), error='NATIVE_WINDOW_AMBIGUOUS')
+        report['checks'].append('ambiguous windows refuse implicit selection')
         selected = min(windows, key=lambda w: w['frameGlobalPoints']['left'])
         client.request('window.select', dict(sessionId=sid, selector=dict(by='window-id', windowId=selected['windowId'])))
         foreign = fixture('--foreign')  # Covers target with bright green pixels.
@@ -149,7 +311,14 @@ def main():
         assert result['viewport'] == dict(width=360, height=260)
         assert result['scale'] == tree['scale'] == 1
         assert result['counts']['truncated'] == 0, result
-        assert result['counts']['attributeErrors'] == 0, result
+        # AT-SPI can answer no geometry for a widget GTK draws inside another
+        # (the popdown's arrow, a cell renderer). That is a diagnostic, never an
+        # invented rectangle; the matrix profile asserts the controls themselves.
+        diagnostics = result['diagnostics']
+        assert not [d for d in diagnostics if d['code'] not in ('NATIVE_AX_MISSING_GEOMETRY',
+                                                                'NATIVE_X11_CLIENT_FRAME')], diagnostics
+        report['baseDiagnostics'] = [d for d in diagnostics if d['code'] == 'NATIVE_AX_MISSING_GEOMETRY']
+        report['checks'].append('no unexpected attribute diagnostics')
         save = next(n for n in tree['nodes'] if n.get('name') == 'Save')
         assert save['role'] == 'button', save
         assert save.get('identifier') == 'fixture.save', save
@@ -161,31 +330,124 @@ def main():
         assert pixel(*point) == (255, 0, 0), ('Selected red client pixels must survive green foreign occlusion', pixel(*point))
         report['occlusion'].update(semanticPoint=dict(x=point[0], y=point[1]),
                                     selectedRgb=list(pixel(*point)), foreignRgb=list(foreign_pixel(*point)))
-        report['checks'].extend(['duplicate-title same-PID windows', 'stable toolkit identifier', 'client-frame geometry', 'semantic-rect pixel alignment', 'foreign occluder excluded'])
+        report['checks'].extend(['duplicate-title same-PID windows', 'stable toolkit identifier', 'client-frame geometry',
+                                 'semantic-rect pixel alignment', 'foreign occluder excluded'])
+        entry = next((n for n in tree['nodes'] if n.get('identifier') == 'fixture.name'), None)
+        assert entry is not None and 'value' not in entry, ('Entry text must not be collected', entry)
+        assert 'Fixture value' not in (out / 'a11y.json').read_text(), 'Entry text leaked into the base tree'
+        report['checks'].append('entry text is not collected')
+        # A scalar value is the control's position, not the AtspiValue interface
+        # pointer the old reader wrote into the tree (a memory address).
+        level = next(n for n in tree['nodes'] if n.get('identifier') == 'fixture.level')
+        assert level['role'] == 'slider', level
+        assert level.get('value') == '4', ('A numeric value must be the slider position', level)
+        report['checks'].append('deterministic numeric value collected')
         truncated = client.request('snapshot.capture', dict(params, maxNodes=1, outputTreePath=str(out / 'truncated.json'), outputPngPath=str(out / 'truncated.png')))
         assert truncated['counts']['nodes'] == 1 and truncated['counts']['truncated'] > 0
         report['checks'].append('bounded traversal reports truncation')
         client.request('snapshot.capture', dict(params, windowId='window[x11:0]'), error='NATIVE_WINDOW_NOT_SELECTED')
         client.request('input.click', {}, error='NATIVE_UNSUPPORTED_OPERATION')
         client.request('session.close', dict(sessionId=sid, terminateIfLaunched=True), error='NATIVE_UNSUPPORTED_OPERATION')
+        stop(app)
+        client.request('window.list', dict(sessionId=sid), error='NATIVE_TARGET_EXITED')
+        report['checks'].append('target exit is NATIVE_TARGET_EXITED')
         client.request('session.close', dict(sessionId=sid))
-        assert app.poll() is None
         report['checks'].extend(['capture selected-window binding', 'physical input denied', 'close detaches only'])
-        report.update(passed=True, hello=hello, doctor=doctor, capture=result)
-        (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-        print(json.dumps(report, indent=2))
-    except Exception as error:
-        report.update(passed=False, error=str(error), traceback=traceback.format_exc(), protocol=client.history)
-        (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
-        raise
+        report.update(capture=result)
+        return report
     finally:
         if x:
             x.fn('XCloseDisplay', I)()
-        for p in (foreign, app):
-            if p and p.poll() is None:
-                p.terminate()
-                p.wait(timeout=5)
-        client.close()
+        stop(foreign)
+        stop(app)
+
+
+def partial_association(out):
+    """X11 clients with no AT-SPI bridge are a partial profile, not an empty app.
+
+    The X11-only fixture is a plain Xlib window: no toolkit, so no AT-SPI app.
+    The observer must say NATIVE_AX_PARTIAL, never `NATIVE_WINDOW_NOT_FOUND`
+    (which reads as "the app has no window") and never a fabricated tree.
+    """
+    import Xlib.display  # noqa: F401  (required: missing dependencies fail the lane)
+    script = (
+        'import Xlib.display, Xlib.Xatom, os, time\n'
+        'd = Xlib.display.Display()\n'
+        's = d.screen()\n'
+        'w = s.root.create_window(0, 0, 80, 60, 0, s.root_depth, 1)\n'
+        'w.change_property(d.intern_atom("_NET_WM_PID"), Xlib.Xatom.CARDINAL, 32, [os.getpid()])\n'
+        'w.map(); d.sync(); print("ready", flush=True); time.sleep(60)\n'
+    )
+    process = subprocess.Popen([sys.executable, '-c', script], stdout=subprocess.PIPE, text=True)
+    evidence = dict(outcome='FAIL', profile='X11-only client, no AT-SPI bridge', pid=process.pid)
+    client, x = None, None
+    try:
+        assert select.select([process.stdout], [], [], 10)[0], 'X11-only fixture startup timed out'
+        assert process.stdout.readline().strip() == 'ready'
+        x = X11()
+        windows = x.windows(process.pid)
+        evidence['x11Windows'] = windows
+        assert len(windows) == 1, windows
+        assert x.pid(windows[0]['xid']) == process.pid
+        client = Client()
+        try:
+            hello = client.request('hello')
+            session = client.request('target.open', dict(target=dict(by='pid', pid=process.pid)))
+            response = client.request('window.list', dict(sessionId=session['sessionId']), error='NATIVE_AX_PARTIAL')
+            details = response['error']['details']
+            assert details == dict(x11Windows=1, atspiWindows=0, atspiApps=0), details
+            client.request('window.select', dict(sessionId=session['sessionId'], selector=None), error='NATIVE_AX_PARTIAL')
+            client.request('session.close', dict(sessionId=session['sessionId']))
+            assert process.poll() is None, 'Closing a session must not terminate the client'
+            evidence.update(outcome='PASS', hello=hello, response=response)
+            return evidence
+        finally:
+            client.close()
+    finally:
+        evidence['protocol'] = client.history if client else []
+        (out / 'partial.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        if x:
+            x.fn('XCloseDisplay', I)()
+        stop(process)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--out', default='test-results/native/linux')
+    args = parser.parse_args()
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    client = None
+    report = dict(platform='linux', backend='x11', checks=[], profiles={})
+    try:
+        client = Client()
+        hello = client.request('hello')
+        assert hello['platform'] == 'linux' and hello['capabilities']['physicalPointer'] is False
+        doctor = client.request('doctor', dict(prompt=False))
+        assert doctor['accessibility']['available'] and doctor['screenCapture']['available'], doctor
+        report['hello'], report['doctor'] = hello, doctor
+        report['profiles']['base'] = capture_base(client, out)
+        report['checks'].extend(report['profiles']['base'].pop('checks'))
+        matrix_out = out / 'matrix'
+        matrix_out.mkdir(parents=True, exist_ok=True)
+        report['profiles']['matrix'] = capture_matrix(client, matrix_out)
+        report['checks'].append('GTK semantics matrix: roles, identifiers, states, actions')
+        report['checks'].append('entry text and password values never collected')
+        partial = partial_association(out)
+        report['profiles']['partial-association'] = partial
+        assert partial['outcome'] == 'PASS', partial
+        report['checks'].append(f"partial association: {partial['outcome']} ({partial.get('reason', 'NATIVE_AX_PARTIAL')})")
+        report.update(passed=True)
+        (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        print(json.dumps(report, indent=2))
+    except Exception as error:
+        report.update(passed=False, error=str(error), traceback=traceback.format_exc(),
+                      protocol=client.history if client else [])
+        (out / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        raise
+    finally:
+        if client:
+            client.close()
 
 
 if __name__ == '__main__':
