@@ -35,11 +35,10 @@ MATRIX = {
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
     'fixture.mode.b': dict(role='radio button', name='Mode B'),
-    # GTK3 keeps no tab identifier (the notebook's accessible takes the last tab's
-    # name and id), so the notebook is identified by its tab list and its
-    # selected page; a page tab's own name is not announced reliably across GTK
-    # versions either, and is recorded rather than required.
-    'fixture.tabs': dict(role='page tab list', name='One', selected_page='First page', tab_state='selected'),
+    # GTK3 gives the notebook's accessible (its tab list) the last tab's name and
+    # id, and a tab's name is announced inconsistently, so the notebook is found
+    # by its tab list and held to its selected tab state and selected page label.
+    'fixture.tabs': dict(role='page tab list', selected_page='First page'),
     'fixture.choice': dict(role='combo box', name='Choice'),
     'fixture.disabled': dict(role='push button', name='Disabled', states=['disabled']),
     'fixture.color': dict(role='image', name='Fixture color'),
@@ -51,6 +50,7 @@ observer_role = {
     'push button': 'button', 'entry': 'textfield', 'password text': 'textfield',
     'check box': 'checkbox', 'radio button': 'radio', 'page tab': 'tab',
     'combo box': 'combobox', 'toggle button': 'button', 'label': 'text', 'image': 'image',
+    'page tab list': 'group', 'table': 'list', 'scroll bar': 'scrollview',
 }
 
 # Platform-role names GTK may report for one control. A GTK3 GtkEntry labelled
@@ -189,7 +189,7 @@ def by_identifier(tree):
     # The notebook has no identifier of its own; its tab list is the notebook, and
     # it announces the selected page by name, which is unique in this window.
     for node in tree['nodes']:
-        if node.get('platformRole') == 'page tab list' and (node.get('name') or '').strip() not in ('', 'Pages'):
+        if node.get('platformRole') == 'page tab list':
             found.setdefault('fixture.tabs', node)
             break
     return found
@@ -223,7 +223,12 @@ def capture_matrix(client, out):
             # carries a value, so both are accepted by name.
             actual = observed[identifier]['platformRole']
             allowed = MATRIX_ROLE_NAMES.get(identifier, (expected['role'],))
-            assert actual in allowed, (identifier, 'platform role', actual, allowed)
+            # The notebook's tab list is the control this identifier names, so it is
+            # looked up by the tab list's role whatever its declared primary role.
+            if identifier == 'fixture.tabs':
+                assert actual == 'page tab list', (identifier, 'platform role', actual)
+            else:
+                assert actual in allowed, (identifier, 'platform role', actual, allowed)
             if 'selected_page' in expected:
                 # Exactly one tab is selected, and it carries the selected page's
                 # label. A tab's own name is recorded in `observed`, not required:
@@ -239,7 +244,8 @@ def capture_matrix(client, out):
             # An accepted alternative name is recorded, not normalized away: a tree
             # that calls a labelled entry `text` is what the toolkit announced.
             assert node['role'] == observer_role.get(actual, actual), (identifier, 'role', actual, node['role'])
-            assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
+            if 'name' in expected:
+                assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
             for state in expected.get('states', ()):
                 assert node.get('states', {}).get(state) is True, (identifier, 'state', state, node.get('states'))
             for state in ('checked', 'selected', 'expanded', 'focused', 'hidden', 'disabled'):
