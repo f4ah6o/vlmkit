@@ -380,15 +380,9 @@ def partial_association(out):
     The observer must say NATIVE_AX_PARTIAL, never `NATIVE_WINDOW_NOT_FOUND`
     (which reads as "the app has no window") and never a fabricated tree.
     """
-    xlib = None
-    for candidate in ('python3-xlib', 'Xlib'):
-        try:
-            __import__(candidate)
-            xlib = candidate
-            break
-        except ImportError:
-            continue
-    if xlib is None:
+    try:
+        import Xlib.display  # noqa: F401  (the X11-only fixture's client library)
+    except ImportError:
         return dict(outcome='UNRUN', reason='python3-xlib is not installed; no X11-only fixture available')
     script = (
         'import Xlib.display, time\n'

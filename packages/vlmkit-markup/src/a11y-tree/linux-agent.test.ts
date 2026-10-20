@@ -194,7 +194,8 @@ describe("Linux observer admission", () => {
   });
 });
 
-// The admitted matrix's shape, held as an artifact the generic judge can read.
+// The hosted matrix tree (run 39359445974, trimmed to the identified controls plus
+// the unnamed button), held as an artifact the unchanged generic judge reads.
 describe("Linux recorded matrix artifact", () => {
   const root = resolve(import.meta.dirname!, "../../../..");
   const dir = join(root, "fixtures/native/linux/matrix");
@@ -280,9 +281,11 @@ describe("Linux live client-to-judge", () => {
         assert.equal(report.platform, "linux");
         assert.equal(report.native?.identity?.pid, fixture.pid);
         assert.equal(report.native?.counts.truncated, 0);
-        // Only a geometry-less widget is a diagnostic (see native/linux/integration.py).
+        // Accepted diagnostics: a geometry-less widget, and the client-frame note that
+        // every Linux capture carries (see native/linux/integration.py).
+        const ACCEPTED = ["NATIVE_AX_MISSING_GEOMETRY", "NATIVE_X11_CLIENT_FRAME"];
         assert.deepEqual(
-          (report.native?.diagnostics ?? []).map((d) => d.code).filter((code) => code !== "NATIVE_AX_MISSING_GEOMETRY"),
+          (report.native?.diagnostics ?? []).map((d) => d.code).filter((code) => !ACCEPTED.includes(code)),
           [],
         );
         const judged = await runCheckA11yTree({ source: out });

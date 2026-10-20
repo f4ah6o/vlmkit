@@ -18,9 +18,9 @@ toolkit-independent coordinates, and no row below claims a profile it did not ob
 | Python pure suite (`native/linux/test_*.py`) | **PASS**, 35 tests, 2 skipped | run in this sandbox: `python3 -m unittest discover -s native/linux -p 'test_*.py'` |
 | Fixture import smoke (base + matrix) | **SKIPPED** here, **UNRUN** hosted | GTK needs a display; the two skips are this test, which says so |
 | `linux-agent.test.ts` + `native-agent.test.ts` (vitest transport lane) | **UNRUN** | `node_modules` is absent in this sandbox and `pnpm`/`vp` cannot install (`EROFS` on the package-manager cache); the source was read, not executed |
-| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **in progress** | runs 39357942889 → 39359445974 fixed one real finding per run (below); the latest run is pending |
-| Semantics-matrix live assertions | **FAIL → re-run pending** | see "Hosted runs" below |
-| Recorded fixture findings (`fixtures/native/linux/matrix`) | expectations re-derived by an ad-hoc port of the judge's two rules; the vitest assertion is **UNRUN** | the port matched `expected.json` (unlabelled `window[0]>button[3]`, unreachable `window[0]>text[1]`, no small targets) |
+| GTK/Xvfb/xcompmgr fixture lane (`integration.py`) | **PASS** — [run 39361211824](https://github.com/f4ah6o/vlmkit/actions/runs/39361211824), report `passed: true` | all 16 checks: base (occlusion, ambiguity, truncation, entry text absent, `NATIVE_TARGET_EXITED`, close detaches), the semantics matrix, and `NATIVE_X11_CLIENT_FRAME`/no attribute diagnostics |
+| Semantics-matrix live assertions | **PASS** (same run) | observed, per control: `push button→button`, `text→text` (the labelled entry), `password text→textfield`, `check box→checkbox` `checked`, `toggle button→button`, `radio button→radio` (`Mode A` checked), `page tab list→group` with one `selected` tab, `combo box→combobox`, `image→image`, plus native `atspi:click`/`atspi:activate`/`atspi:press` action names |
+| Recorded fixture (`fixtures/native/linux/matrix`) | recorded from the hosted run above | trimmed to the identified controls plus the unnamed button; the judge's rules re-derived against it give one finding, the unnamed `button[12]`, which is what `expected.json` holds. The vitest assertion ran in the `transport` job (both tests passed) — its source predates the re-record, so the next run is its first with this artifact |
 
 ### Hosted runs
 

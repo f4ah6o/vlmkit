@@ -1,7 +1,7 @@
 {
-  "provenance": "hand-written contract fixture from the admitted GTK matrix shape; synthetic PNG, not a live AT-SPI recording",
+  "provenance": "recorded from the hosted GTK matrix lane (run 39359445974), trimmed to the identified controls plus the unnamed button; the frame is the synthetic calibration PNG, not that run's screenshot",
   "truncated": 0,
-  "unlabelled": ["window[0]>button[3]"],
-  "unreachable": ["window[0]>text[1]"],
+  "unlabelled": ["window[0]>group[0]>button[12]"],
+  "unreachable": [],
   "touch": []
 }
