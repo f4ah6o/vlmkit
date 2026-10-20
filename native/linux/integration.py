@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 MATRIX = {
     'fixture.save': dict(role='push button', name='Save', actions_any=['atspi:click']),
     'fixture.name': dict(role='entry', name='Name'),
-    'fixture.secret': dict(role='password text', name='Secret', roles=('password text', 'entry')),
+    'fixture.secret': dict(role='password text', name='Secret'),
     'fixture.remember': dict(role='check box', name='Remember', states=['checked']),
     'fixture.toggle': dict(role='toggle button', name='Detail', actions_any=['atspi:click']),
     'fixture.mode.a': dict(role='radio button', name='Mode A', states=['checked']),
@@ -51,6 +51,15 @@ observer_role = {
 }
 
 # The normalized role expected for a matrix control, from its accepted names.
+# Platform-role names GTK may legitimately report for one control. `Name` is a
+# GtkEntry labelled by its accessible name alone: GTK3's GtkEntry accessible
+# reports role TEXT with that name, so the tree says `text`; the entry is
+# accepted under either name, without a value in both cases.
+MATRIX_ROLE_NAMES = {
+    'fixture.name': ('entry', 'text'),
+    'fixture.secret': ('password text', 'entry'),
+}
+
 MATRIX_ROLE = {
     'fixture.save': 'button', 'fixture.name': 'textfield', 'fixture.secret': 'textfield',
     'fixture.remember': 'checkbox', 'fixture.toggle': 'button', 'fixture.mode.a': 'radio',
@@ -203,10 +212,8 @@ def capture_matrix(client, out):
             # may report `entry` as its AtkRole; both map to `textfield` and neither
             # carries a value, so both are accepted by name.
             actual = observed[identifier]['platformRole']
-            if actual in ('entry', 'password text'):
-                assert actual in roles, (identifier, 'platform role', actual, roles)
-            else:
-                assert actual == expected['role'], (identifier, 'platform role', actual, expected['role'])
+            allowed = MATRIX_ROLE_NAMES.get(identifier, (expected['role'],))
+            assert actual in allowed, (identifier, 'platform role', actual, allowed)
             assert node['role'] == MATRIX_ROLE[identifier], (identifier, 'role', node['role'])
             assert node.get('name') == expected['name'], (identifier, 'name', node.get('name'), expected['name'])
             for state in expected.get('states', ()):
