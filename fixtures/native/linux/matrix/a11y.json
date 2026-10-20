@@ -1,0 +1,166 @@
+{
+  "format": "vlmkit-a11y/1",
+  "platform": "linux",
+  "viewport": { "width": 360, "height": 560 },
+  "scale": 1,
+  "frame": "frame.png",
+  "nodes": [
+    {
+      "path": "window[0]",
+      "role": "window",
+      "platformRole": "frame",
+      "name": "VLMKit Linux matrix",
+      "rect": { "left": 0, "top": 0, "width": 360, "height": 560 }
+    },
+    {
+      "path": "window[0]>image[0]",
+      "role": "image",
+      "platformRole": "image",
+      "identifier": "fixture.color",
+      "name": "Fixture color",
+      "rect": { "left": 20, "top": 20, "width": 100, "height": 60 }
+    },
+    {
+      "path": "window[0]>button[0]",
+      "role": "button",
+      "platformRole": "push button",
+      "identifier": "fixture.save",
+      "name": "Save",
+      "actions": ["atspi:click"],
+      "rect": { "left": 20, "top": 100, "width": 100, "height": 40 }
+    },
+    {
+      "path": "window[0]>textfield[0]",
+      "role": "textfield",
+      "platformRole": "entry",
+      "identifier": "fixture.name",
+      "name": "Name",
+      "actions": ["atspi:keyboard", "atspi:set-text-contents"],
+      "rect": { "left": 140, "top": 100, "width": 180, "height": 35 }
+    },
+    {
+      "path": "window[0]>textfield[1]",
+      "role": "textfield",
+      "platformRole": "password text",
+      "identifier": "fixture.secret",
+      "name": "Secret",
+      "rect": { "left": 140, "top": 145, "width": 180, "height": 35 }
+    },
+    {
+      "path": "window[0]>combobox[0]",
+      "role": "combobox",
+      "platformRole": "combo box",
+      "identifier": "fixture.choice",
+      "name": "Choice",
+      "actions": ["atspi:click"],
+      "states": { "expanded": true },
+      "rect": { "left": 200, "top": 200, "width": 140, "height": 30 }
+    },
+    {
+      "path": "window[0]>checkbox[0]",
+      "role": "checkbox",
+      "platformRole": "check box",
+      "identifier": "fixture.remember",
+      "name": "Remember",
+      "actions": ["atspi:toggle"],
+      "states": { "checked": true },
+      "rect": { "left": 20, "top": 200, "width": 180, "height": 30 }
+    },
+    {
+      "path": "window[0]>button[1]",
+      "role": "button",
+      "platformRole": "toggle button",
+      "identifier": "fixture.toggle",
+      "name": "Detail",
+      "actions": ["atspi:click"],
+      "rect": { "left": 20, "top": 240, "width": 100, "height": 30 }
+    },
+    {
+      "path": "window[0]>scrollview[0]",
+      "role": "scrollview",
+      "platformRole": "scroll pane",
+      "actions": ["atspi:scroll-down"],
+      "rect": { "left": 200, "top": 240, "width": 160, "height": 60 }
+    },
+    {
+      "path": "window[0]>scrollview[0]>listitem[0]",
+      "role": "listitem",
+      "platformRole": "table row",
+      "name": "Row 0",
+      "rect": { "left": 200, "top": 240, "width": 160, "height": 20 }
+    },
+    {
+      "path": "window[0]>scrollview[0]>listitem[1]",
+      "role": "listitem",
+      "platformRole": "table row",
+      "name": "Row 1",
+      "rect": { "left": 200, "top": 260, "width": 160, "height": 20 }
+    },
+    {
+      "path": "window[0]>radio[0]",
+      "role": "radio",
+      "platformRole": "radio button",
+      "identifier": "fixture.mode.a",
+      "name": "Mode A",
+      "actions": ["atspi:click"],
+      "states": { "checked": true },
+      "rect": { "left": 20, "top": 280, "width": 100, "height": 30 }
+    },
+    {
+      "path": "window[0]>radio[1]",
+      "role": "radio",
+      "platformRole": "radio button",
+      "identifier": "fixture.mode.b",
+      "name": "Mode B",
+      "actions": ["atspi:click"],
+      "rect": { "left": 140, "top": 280, "width": 100, "height": 30 }
+    },
+    {
+      "path": "window[0]>tab[0]",
+      "role": "tab",
+      "platformRole": "page tab",
+      "identifier": "fixture.tab.one",
+      "name": "One",
+      "states": { "selected": true },
+      "rect": { "left": 20, "top": 330, "width": 80, "height": 30 }
+    },
+    {
+      "path": "window[0]>tab[1]",
+      "role": "tab",
+      "platformRole": "page tab",
+      "identifier": "fixture.tab.two",
+      "name": "Two",
+      "rect": { "left": 100, "top": 330, "width": 80, "height": 30 }
+    },
+    {
+      "path": "window[0]>text[0]",
+      "role": "text",
+      "platformRole": "label",
+      "name": "First page",
+      "rect": { "left": 30, "top": 370, "width": 120, "height": 20 }
+    },
+    {
+      "path": "window[0]>text[1]",
+      "role": "text",
+      "platformRole": "label",
+      "name": "Footnote",
+      "rect": { "left": 20, "top": 600, "width": 80, "height": 20 }
+    },
+    {
+      "path": "window[0]>button[2]",
+      "role": "button",
+      "platformRole": "push button",
+      "identifier": "fixture.disabled",
+      "name": "Disabled",
+      "states": { "disabled": true },
+      "rect": { "left": 20, "top": 470, "width": 100, "height": 40 }
+    },
+    {
+      "path": "window[0]>button[3]",
+      "role": "button",
+      "platformRole": "push button",
+      "actions": ["atspi:click"],
+      "rect": { "left": 160, "top": 470, "width": 70, "height": 35 }
+    }
+  ]
+}

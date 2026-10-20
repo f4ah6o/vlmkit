@@ -46,12 +46,25 @@ jobs:
       - name: X11 AT-SPI selected-window fixture
         run: |
           mkdir -p test-results/native/linux
+          # Base (occlusion, ambiguity, exit) and GTK semantics matrix profiles;
+          # each writes its tree, PNG and report under the retained artifact.
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
             native/linux/with-compositor.sh /usr/bin/python3 native/linux/integration.py --out test-results/native/linux
+      - name: Record the fixture artifact identity
+        if: always()
+        run: |
+          find test-results/native/linux -type f | sort | xargs -r sha256sum | tee test-results/native/linux/SHA256SUMS
       - name: Live TypeScript scan and generic judge
+        id: live
+        continue-on-error: true
         run: |
           VLMKIT_LINUX_LIVE=1 dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
             native/linux/with-compositor.sh pnpm exec vp test run packages/vlmkit-markup/src/a11y-tree/linux-agent.test.ts
+      - name: Keep the live TypeScript verdict beside the fixture artifact
+        if: always()
+        run: |
+          mkdir -p test-results/native/linux/ts-live
+          printf '{"outcome":"%s"}\n' "${{ steps.live.outcome }}" > test-results/native/linux/ts-live/verdict.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -59,6 +72,11 @@ jobs:
           path: test-results/native/linux
           if-no-files-found: warn
           retention-days: 14
+      - name: Fail the job when either native half failed
+        if: steps.live.outcome != 'success'
+        run: |
+          echo "Live TypeScript scan verdict: ${{ steps.live.outcome }} (see ts-live/verdict.json)" >&2
+          exit 1
   transport:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

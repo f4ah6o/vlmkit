@@ -9,6 +9,7 @@ import { describe, it } from "vite-plus/test";
 import { captureNativeA11y, linuxTarget } from "./native-agent.ts";
 import { runScanA11y } from "./scan-a11y.ts";
 import { a11yScanGate } from "../gates/a11y-tree.gate.ts";
+import { parseA11yTree } from "@mizchi/vlmkit-judge/a11y-tree.ts";
 
 function fakeAgent(overrides: Record<string, unknown> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "linux-observer-"));
@@ -155,6 +156,26 @@ describe("Linux observer admission", () => {
     assert.equal(result.capture.frameKind, "client-window");
     assert.equal(result.capture.contentPolicy.provenance, "unclassified");
   });
+  it.skipIf(process.platform !== "linux")("passes a partial-tree code through unchanged", async () => {
+    // An X11 client with no AT-SPI bridge fails closed as NATIVE_AX_PARTIAL; the
+    // transport must not rewrite it into a generic "not found" (an empty app).
+    const agent = fakeAgent({
+      doctor: { accessibility: { available: true }, screenCapture: { available: true } },
+      "target.open": { sessionId: "session-test" },
+      "window.select": {
+        error: { code: "NATIVE_AX_PARTIAL", message: "AT-SPI exposes no same-PID window" },
+      },
+    });
+    await assert.rejects(
+      captureNativeA11y({
+        source: "linux:pid=123",
+        out: join(agent.dir, "tree.json"),
+        frame: join(agent.dir, "frame.png"),
+        agent: agent.file,
+      }),
+      /NATIVE_AX_PARTIAL/,
+    );
+  });
   it.skipIf(process.platform !== "linux")("rejects artifacts attributed to another PID or window", async () => {
     for (const identity of [
       { pid: 999, windowId: "window[0]" },
@@ -166,6 +187,36 @@ describe("Linux observer admission", () => {
         /NATIVE_TARGET_MISMATCH/,
       );
     }
+  });
+});
+
+// The admitted matrix's shape, held as an artifact the generic judge can read.
+describe("Linux recorded matrix artifact", () => {
+  const root = resolve(import.meta.dirname!, "../../../..");
+  const dir = join(root, "fixtures/native/linux/matrix");
+  it("parses with optional native metadata and keeps every identifier", () => {
+    const tree = parseA11yTree(readFileSync(join(dir, "a11y.json"), "utf8"));
+    assert.equal(tree.platform, "linux");
+    assert.equal(tree.scale, 1);
+    const save = tree.nodes.find((n) => n.identifier === "fixture.save");
+    assert.equal(save?.role, "button");
+    assert.equal(save?.platformRole, "push button");
+    // Values are not collected for entry or password roles in this profile.
+    const entries = tree.nodes.filter((n) => n.platformRole === "entry" || n.platformRole === "password text");
+    for (const node of entries) assert.equal(node.value, undefined, `${node.path} must not carry entry text`);
+  });
+  it("yields the recorded findings through the unchanged generic judge", async () => {
+    const expected = JSON.parse(readFileSync(join(dir, "expected.json"), "utf8"));
+    const report = await runCheckA11yTree({ source: join(dir, "a11y.json") });
+    const paths = (rows: Array<{ path: string }>) => rows.map((r) => r.path).sort();
+    assert.deepEqual(paths(report.unlabelled), [...expected.unlabelled].sort());
+    assert.deepEqual(
+      report.unreachable.map((row) => row.first.path),
+      expected.unreachable,
+    );
+    assert.deepEqual(paths(report.touch.failures), [...expected.touch].sort());
+    // The frame is read, so contrast was measured rather than skipped.
+    assert.ok(report.contrast !== null, "a frame must be measured, not silently skipped");
   });
 });
 
@@ -215,14 +266,21 @@ describe("Linux live client-to-judge", () => {
             });
             break;
           } catch (error) {
-            if (!String(error).includes("NATIVE_WINDOW_NOT_FOUND") || Date.now() > deadline) throw error;
+            // The toolkit registers its AT-SPI window after the X11 one exists.
+            const code = (error as { code?: string }).code;
+            if (!["NATIVE_WINDOW_NOT_FOUND", "NATIVE_AX_PARTIAL"].includes(code ?? "") || Date.now() > deadline)
+              throw error;
             await new Promise((resolveWait) => setTimeout(resolveWait, 200));
           }
         }
         assert.equal(report.platform, "linux");
         assert.equal(report.native?.identity?.pid, fixture.pid);
-        assert.equal(report.native?.counts.attributeErrors, 0);
         assert.equal(report.native?.counts.truncated, 0);
+        // Only a geometry-less widget is a diagnostic (see native/linux/integration.py).
+        assert.deepEqual(
+          (report.native?.diagnostics ?? []).map((d) => d.code).filter((code) => code !== "NATIVE_AX_MISSING_GEOMETRY"),
+          [],
+        );
         const judged = await runCheckA11yTree({ source: out });
         assert.ok(judged.unlabelled.length > 0, "Planted unnamed button must be detected by unchanged generic judge");
       } finally {

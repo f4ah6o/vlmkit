@@ -4,10 +4,14 @@
 Uses system shared libraries through ctypes; no GI typelib or pip dependencies.
 X11 is a trusted local desktop protocol, not a security boundary against malicious
 clients forging _NET_WM_PID. No input, focus, activation, launch or termination API.
+
+Observation only: roles, names, toolkit identifiers, deterministic scalar values,
+states and native action names. Text-field contents are *not* collected.
 """
 import ctypes as C
 import ctypes.util
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -69,15 +73,74 @@ ROLES = {'push button': 'button', 'toggle button': 'button', 'entry': 'textfield
          'password text': 'textfield', 'check box': 'checkbox', 'radio button': 'radio',
          'page tab': 'tab', 'menu item': 'menuitem', 'combo box': 'combobox',
          'label': 'text', 'static': 'text', 'panel': 'group', 'list item': 'listitem',
-         'scroll pane': 'scrollview', 'frame': 'window'}
+         'scroll pane': 'scrollview', 'frame': 'window', 'image': 'image'}
+
+# `states` is a closed set in `vlmkit-a11y/1`; toolkit values outside it stay out.
+STATE_KEYS = ('focused', 'checked', 'selected', 'expanded', 'hidden', 'disabled')
+
+# AT-SPI roles whose value is typed content (an entry's text), which this profile
+# never collects; `password text` must never be read at all.
+TEXT_CONTENT_ROLES = ('entry', 'password text')
+
+# Deterministic value bound: a huge scroll offset is a state, not content.
+VALUE_TEXT_LIMIT = 256
 
 # These are request-local hard limits. `maxNodes` remains the public emitted-node
 # limit; a second visited limit also charges geometry-less and foreign nodes, and
 # the reference limit bounds AT-SPI objects retained while the request runs.
 MAX_AX_VISITED = 20000
 MAX_AX_REFERENCES = 50000
+HARD_BUDGET_CODES = ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT')
 MAX_AX_CHILDREN = 10000
 AX_REVALIDATION_REFERENCE_RESERVE = 1
+# The public traversal default; the agent clamps it to [0, 128].
+DEFAULT_MAX_DEPTH = 64
+DEFAULT_MAX_NODES = 10000
+MAX_DEPTH = 128
+
+
+def role_of(platform_role):
+    """Normalized role; an unmapped toolkit role is preserved, never dropped."""
+    return ROLES.get(platform_role, platform_role) or 'unknown'
+
+
+def scalar_value(raw):
+    """AT-SPI value -> string for a deterministic scalar layout, else None.
+
+    Layouts whose value is complex (text with runs, relations) are omitted rather
+    than serialized, matching the macOS collector's rule for complex AX values.
+    """
+    if not isinstance(raw, (str, int, float)) or isinstance(raw, bool):
+        return None
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, int):
+        return str(raw)
+    if math.isfinite(raw):
+        return format(raw, '.17g')
+    return None
+
+
+def associated_pids(accessibles, windows):
+    """Same-PID pairs with exact SCREEN extents; titles never bind a surface."""
+    return {a['pid'] for a in accessibles if any(a['pid'] == w['pid'] and a['rect'] == w['rect'] for w in windows)}
+
+
+def association_failure(accessibles, windows):
+    """Why AT-SPI and X11 windows did not associate, or None when they did.
+
+    Distinguishes "the X11 client exists but AT-SPI cannot see it" (a toolkit
+    without a usable bridge, a partial/absent tree) from "both saw it and the
+    geometry refused it", so neither reads as an app that has no window.
+    """
+    if not windows or associated_pids(accessibles, windows):
+        return None
+    if not accessibles:
+        return Failure('NATIVE_AX_PARTIAL',
+                       'X11 client window(s) found, but AT-SPI exposes no same-PID window: '
+                       'the toolkit has no accessibility bridge')
+    return Failure('NATIVE_AX_PARTIAL',
+                   'AT-SPI and X11 windows do not share exact global extents; geometry association is refused')
 
 
 def associate(accessibles, windows):
@@ -236,7 +299,30 @@ class Atspi:
     def pid(self, obj):
         return self.call('accessible_get_process_id', obj, result=C.c_uint)
 
-    def states(self, obj):
+    def name(self, obj):
+        """The toolkit's own accessible name; empty means unnamed, and AT-SPI's
+        spatial fallbacks are the toolkit's, not an inference here."""
+        return self.text('accessible_get_name', obj)
+
+    def value(self, obj, platform_role):
+        """The control's value, when AT-SPI exposes a deterministic scalar layout.
+
+        Text entry is out of the observation profile: an entry's text is content,
+        and a `password text` node's value must never be collected.
+        """
+        if platform_role in TEXT_CONTENT_ROLES:
+            return None
+        try:
+            raw = self.call('accessible_get_value', obj)
+        except Failure:
+            return None
+        value = scalar_value(raw)
+        if value is None or len(value) > VALUE_TEXT_LIMIT:
+            return None
+        return value
+
+    def _state_set(self, obj):
+        """AT-SPI state set -> the closed `vlmkit-a11y/1` state vocabulary."""
         state = self.obj('accessible_get_state_set', obj, error=False)
         if not state:
             return {}
@@ -253,15 +339,24 @@ class Atspi:
             out['disabled'] = True
         return out
 
+    def states(self, obj):
+        return {k: v for k, v in self._state_set(obj).items() if k in STATE_KEYS}
+
     def windows(self, pid):
+        """Every AT-SPI window this PID announces, plus how many clients it enumerated.
+
+        Non-matching children are dropped as soon as their index advances, so a
+        toolkit with many windows does not retain them for the whole request.
+        """
         desktop = self.obj('get_desktop', args=(0,), types=(I,), error=False)
         if not desktop:
             fail('NATIVE_ACCESSIBILITY_UNAVAILABLE', 'AT-SPI desktop unavailable')
-        found = []
+        found, apps = [], 0
         for _, app in self.children(desktop):
             try:
                 if self.pid(app) != pid:
                     continue
+                apps += 1
                 for index, child in self.children(app):
                     keep = False
                     try:
@@ -278,13 +373,14 @@ class Atspi:
                             self.release_obj(child)
             finally:
                 self.release_obj(app)
-        return found
+        return found, apps
 
     def release_obj(self, obj):
-        # Drop short-lived enumeration references promptly. `references_used`
-        # stays cumulative for the request, so release cannot reopen the budget.
-        for index in range(len(self.refs) - 1, -1, -1):
-            if self.refs[index] == obj:
+        # Drop a short-lived enumeration reference as soon as it is no longer
+        # retained. `references_used` stays cumulative for the request, so a
+        # release cannot reopen the budget.
+        for index, candidate in enumerate(self.refs):
+            if candidate == obj:
                 del self.refs[index]
                 self.unref(obj)
                 return
@@ -374,6 +470,23 @@ class X11:
     def fn(self, name, result, *types):
         fn = bind(self.lib, name, result, P, *types)
         return lambda *args: fn(self.display, *args)
+
+    def xwayland(self):
+        """True when this X server is Xwayland rather than a real X11 desktop.
+
+        The Xwayland extension is announced by Xwayland itself. A session with
+        DISPLAY pointing there is refused even when no Wayland env var leaks
+        into the process: its windows are Wayland surfaces under another name.
+        """
+        atom = self.fn('XInternAtom', U, C.c_char_p, I)(b'XWAYLAND', 1)
+        if not atom:
+            return False
+        opcode, event, error, present = I(), I(), I(), I()
+        if not self.fn('XQueryExtension', I, U, C.POINTER(I), C.POINTER(I), C.POINTER(I))(
+                atom, C.byref(opcode), C.byref(event), C.byref(error)):
+            return False
+        self.sync()
+        return bool(opcode.value)
 
     def sync(self):
         self.fn('XSync', I, I)(0)
@@ -510,17 +623,22 @@ class X11:
                 bind(self.lib, 'XDestroyImage', I, P)(image)
 
 
-def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
+def collect(a, root, pid, origin, max_depth=DEFAULT_MAX_DEPTH, max_nodes=DEFAULT_MAX_NODES,
             max_visited=MAX_AX_VISITED):
     """Collect in depth-first order without first acquiring a parent's children.
 
     A frame holds a single current object plus its next child index. It asks the
     remote tree for one child only after node, depth and visit limits have been
     checked, so a wide parent cannot materialize a large list of AT-SPI proxies.
+
+    The root is the selected window frame, retained by the session: it is emitted
+    as `window[0]`, its visit is charged to the request's visit budget, and the
+    first object seen is the root itself (not only its children).
     """
     max_visited = min(max_visited, MAX_AX_VISITED)
-    nodes, diagnostics, seen, ids = [], [], set(), set()
-    truncated, errors, visited = 0, 0, 1  # root is already retained by caller
+    nodes, diagnostics, ids = [], [], {}
+    seen = set()
+    truncated, errors, visited = 0, 0, 0
     stack = [dict(obj=root, depth=0, ordinal=0, parent='', entered=False,
                   child_count=None, next_index=0, path='')]
 
@@ -529,8 +647,11 @@ def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
                    for frame in stack if frame['child_count'] is not None)
 
     def hard_budget_failure(error):
+        # Only the request's hard budgets stop traversal. An attribute or
+        # subtree problem is a diagnostic and the rest of the tree is still
+        # traversed, so a partial tree is reported as truncated, never as whole.
         nonlocal truncated
-        if error.code not in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT'):
+        if error.code not in HARD_BUDGET_CODES:
             return False
         remaining = remaining_children()
         if stack and stack[-1]['child_count'] is None:
@@ -541,7 +662,7 @@ def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
 
     def optional_error(error):
         nonlocal errors
-        if error.code in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT', 'NATIVE_AX_VISIT_LIMIT'):
+        if error.code in HARD_BUDGET_CODES:
             raise error
         errors += 1
 
@@ -551,6 +672,14 @@ def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
 
         if not frame['entered']:
             frame['entered'] = True
+            if visited >= max_visited:
+                truncated += 1
+                diagnostics.append(dict(code='NATIVE_AX_VISIT_LIMIT'))
+                if obj != root and hasattr(a, 'release_obj'):
+                    a.release_obj(obj)
+                stack.pop()
+                continue
+            visited += 1
             if obj in seen:
                 diagnostics.append(dict(code='NATIVE_AX_CYCLE'))
                 truncated += 1
@@ -579,20 +708,28 @@ def collect(a, root, pid, origin, max_depth=64, max_nodes=10000,
                 else:
                     node = dict(path=path, role=role, platformRole=platform_role,
                                 rect=rect(bounds['left'] - origin['left'], bounds['top'] - origin['top'], bounds['width'], bounds['height']))
-                    for field, method in [('name', 'accessible_get_name'), ('identifier', 'accessible_get_accessible_id')]:
+                    # One bad optional attribute never discards the node: a hard
+                    # budget failure stops traversal, anything else is a diagnostic.
+                    for field, read in (('name', lambda: a.text('accessible_get_name', obj)),
+                                        ('identifier', lambda: a.text('accessible_get_accessible_id', obj)),
+                                        ('value', lambda: a.value(obj, platform_role))):
                         try:
-                            value = a.text(method, obj)
-                            if value:
-                                node[field] = value
-                                if field == 'identifier':
-                                    if value in ids:
-                                        diagnostics.append(dict(code='NATIVE_AX_DUPLICATE_IDENTIFIER', identifier=value))
-                                    ids.add(value)
+                            value = read()
                         except (Failure, AttributeError) as error:
                             if isinstance(error, Failure):
                                 optional_error(error)
                             else:
                                 errors += 1
+                            continue
+                        if not value:
+                            continue
+                        node[field] = value
+                        if field == 'identifier':
+                            if value in ids:
+                                diagnostics.append(dict(code='NATIVE_AX_DUPLICATE_IDENTIFIER',
+                                                        identifier=value, paths=[ids[value], path]))
+                            else:
+                                ids[value] = path
                     try:
                         node['states'] = a.states(obj)
                     except Failure as error:
@@ -710,6 +847,8 @@ class Agent:
             fail('NATIVE_ACCESSIBILITY_UNAVAILABLE', 'A desktop session bus is required')
         if self.x is None:
             self.x = X11()
+        if self.x.xwayland():
+            fail('NATIVE_WAYLAND_UNSUPPORTED', 'This DISPLAY is Xwayland; Wayland/XWayland sessions are unsupported')
         self.x.compositor()
         if self.a is None:
             self.a = Atspi()
@@ -745,7 +884,23 @@ class Agent:
         return session
 
     def windows(self, session):
-        linked = associate(self.a.windows(session['pid']), self.x.windows(session['pid']))
+        accessibles, apps = self.a.windows(session['pid'])
+        clients = self.x.windows(session['pid'])
+        partial = association_failure(accessibles, clients)
+        if partial:
+            # Keep the partial-association evidence on the session so a caller
+            # that retries (a toolkit bridge that is still starting) can report
+            # *why*, instead of reading an empty list as "the app has no window".
+            session['diagnostics'] = [dict(code=partial.code, message=str(partial),
+                                           x11Windows=len(clients), atspiWindows=len(accessibles), atspiApps=apps)]
+        linked = associate(accessibles, clients)
+        if not linked:
+            fail(partial.code if partial else 'NATIVE_WINDOW_NOT_FOUND',
+                 str(partial) if partial else 'No uniquely associated AT-SPI/X11 client window')
+        session.pop('diagnostics', None)
+        return [dict(w, windowId='window[x11:' + str(w['xid']) + ']', axPath=f'window[{w["index"]}]',
+                     frameGlobalPoints=w['rect'], focused=w['states'].get('focused', False),
+                     main=False, minimized=False, onScreen=True, screenCaptureWindowId=w['xid'], frameKind='client-window') for w in linked]
         return [dict(w, windowId='window[x11:' + str(w['xid']) + ']', axPath=f'window[{w["index"]}]',
                      frameGlobalPoints=w['rect'], focused=w['states'].get('focused', False),
                      main=False, minimized=False, onScreen=True, screenCaptureWindowId=w['xid'], frameKind='client-window') for w in linked]
@@ -799,34 +954,39 @@ class Agent:
             return [self.public(w) for w in windows]
         if method == 'window.select':
             w = choose(windows, params.get('selector'))
+            session_diagnostics = s.pop('diagnostics', None) or []
             s['compositor'] = self.x.compositor()
             if s.get('selectedObj'):
                 self.a.unref(s['selectedObj'])
             s['selectedObj'] = bind(self.a.gobj, 'g_object_ref', P, P)(w['obj'])
             s['selected'] = w['windowId']
-            return self.public(w)
+            return dict(self.public(w), diagnostics=session_diagnostics)
         if params.get('windowId') != s['selected'] or not s['selected']:
             fail('NATIVE_WINDOW_NOT_SELECTED', 'Capture requires the explicitly selected session window')
         w = choose(windows, dict(by='window-id', windowId=s['selected']))
         if w['obj'] != s.get('selectedObj'):
             fail('NATIVE_WINDOW_CHANGED', 'Selected accessibility window identity changed')
-        max_depth = bounded_int(params.get('maxDepth'), 64, 0, 128)
-        max_nodes = bounded_int(params.get('maxNodes'), 10000, 1, 10000)
+        max_depth = bounded_int(params.get('maxDepth'), DEFAULT_MAX_DEPTH, 0, MAX_DEPTH)
+        max_nodes = bounded_int(params.get('maxNodes'), DEFAULT_MAX_NODES, 1, DEFAULT_MAX_NODES)
         outputs = [params.get('outputTreePath'), params.get('outputPngPath')]
         if any(not isinstance(p, str) or not os.path.isabs(p) for p in outputs) or outputs[0] == outputs[1]:
             fail('NATIVE_INVALID_PARAMS', 'Distinct absolute tree and PNG output paths are required')
+        self.session(params)
         nodes, counts, diagnostics = collect(self.a, w['obj'], s['pid'], w['rect'], max_depth, max_nodes)
         if not nodes:
             for diagnostic in diagnostics:
-                if diagnostic['code'] in ('NATIVE_AX_TIMEOUT', 'NATIVE_AX_REFERENCE_LIMIT',
-                                           'NATIVE_AX_VISIT_LIMIT', 'NATIVE_AX_TRUNCATED'):
+                if diagnostic['code'] in HARD_BUDGET_CODES + ('NATIVE_AX_TRUNCATED',):
                     fail(diagnostic['code'], 'No trustworthy accessible nodes before the traversal budget was reached')
             fail('NATIVE_AX_CANNOT_COMPLETE', 'No accessible nodes with trustworthy geometry')
+        # An app that exits mid-capture is reported as exited, not as an X11
+        # window that changed shape: the caller's next step differs.
+        process_identity(s['pid'])
         # Revalidate accessibility identity/geometry after traversal, before pixels.
         if self.a.pid(w['obj']) != s['pid'] or self.a.bounds(w['obj'], critical=True) != w['rect']:
             fail('NATIVE_WINDOW_CHANGED', 'AT-SPI selected window changed during traversal')
         self.session(params)
         png = self.x.capture(w['xid'], s['pid'], w['rect'], s['compositor'])
+        process_identity(s['pid'])
         viewport = dict(width=w['rect']['width'], height=w['rect']['height'])
         tree = dict(format='vlmkit-a11y/1', platform='linux', viewport=viewport, scale=1,
                     frame=os.path.relpath(outputs[1], Path(outputs[0]).parent), nodes=nodes)
@@ -862,10 +1022,9 @@ def main():
                 result = agent.dispatch(req['method'], req.get('params', {}))
                 response = dict(id=request_id, ok=True, result=result)
             except Exception as e:
+                # dispatch() owns per-request reference cleanup; this loop only
+                # turns the failure into a protocol response.
                 response = dict(id=request_id, ok=False, error=dict(code=getattr(e, 'code', 'NATIVE_INTERNAL_ERROR'), message=str(e)))
-            finally:
-                if agent.a:
-                    agent.a.release()
             print(json.dumps(response, ensure_ascii=False), flush=True)
     finally:
         agent.close()

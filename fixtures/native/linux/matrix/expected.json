@@ -1,0 +1,7 @@
+{
+  "provenance": "hand-written contract fixture from the admitted GTK matrix shape; synthetic PNG, not a live AT-SPI recording",
+  "truncated": 0,
+  "unlabelled": ["window[0]>button[3]"],
+  "unreachable": ["window[0]>text[1]"],
+  "touch": []
+}

@@ -129,6 +129,41 @@ class ObserverTests(unittest.TestCase):
             self.assertFalse(doctor['screenCapture']['available'])
             self.assertEqual(doctor['checks'][0]['id'], code)
 
+    def test_no_atspi_bridge_is_partial_never_an_empty_app(self):
+        agent = o.Agent()
+        agent.x = Mock()
+        agent.x.windows.return_value = [dict(xid=5, pid=100, rect=o.rect(0, 0, 80, 60))]
+        agent.a = Mock()
+        agent.a.windows.return_value = ([], 0)
+        with self.assertRaises(o.Failure) as caught:
+            agent.windows(dict(pid=100))
+        self.assertEqual(caught.exception.code, 'NATIVE_AX_PARTIAL')
+
+    def test_partial_association_is_evidence_on_the_session(self):
+        agent = o.Agent()
+        agent.x = Mock()
+        agent.x.windows.return_value = [dict(xid=5, pid=100, rect=o.rect(0, 0, 80, 60))]
+        agent.a = Mock()
+        agent.a.windows.return_value = ([], 0)
+        session = dict(pid=100)
+        with self.assertRaises(o.Failure):
+            agent.windows(session)
+        self.assertEqual(session['diagnostics'][0]['code'], 'NATIVE_AX_PARTIAL')
+        self.assertEqual(session['diagnostics'][0]['x11Windows'], 1)
+        # Once the toolkit's bridge answers, the stale evidence is cleared.
+        agent.a.windows.return_value = ([dict(obj=9, pid=100, rect=o.rect(0, 0, 80, 60), index=0,
+                                              title='t', states={})], 1)
+        linked = agent.windows(session)
+        self.assertEqual([w['windowId'] for w in linked], ['window[x11:5]'])
+        self.assertNotIn('diagnostics', session)
+
+    def test_agent_errors_are_machine_readable_codes(self):
+        for code in ('NATIVE_AX_PARTIAL', 'NATIVE_TARGET_EXITED', 'NATIVE_WINDOW_AMBIGUOUS',
+                     'NATIVE_AX_VISIT_LIMIT', 'NATIVE_AX_REFERENCE_LIMIT'):
+            failure = o.Failure(code, code)
+            self.assertEqual(failure.code, code)
+            self.assertEqual(str(failure), code)
+
     def test_no_input_or_termination(self):
         agent = o.Agent()
         hello = agent.dispatch('hello', {})
@@ -204,8 +239,10 @@ class ObserverTests(unittest.TestCase):
         fake = TreeAtspi({1: list(range(2, 12))}, geometryless=range(1, 12))
         nodes, counts, diagnostics = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1), max_nodes=1, max_visited=4)
         self.assertEqual(nodes, [])
-        self.assertEqual(len(fake.child_fetches), 3)
-        self.assertEqual(counts['truncated'], 7)
+        # The root's own visit is charged, so only two more children fit in a
+        # budget of 4; the remaining 9 descendants are counted as truncated.
+        self.assertEqual(len(fake.child_fetches), 2)
+        self.assertEqual(counts['truncated'], 9)
         self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
 
     def test_lazy_cycle_deep_and_foreign_tree_edges_are_bounded(self):
@@ -229,17 +266,21 @@ class ObserverTests(unittest.TestCase):
         self.assertTrue(any(d['code'] == 'NATIVE_AX_FOREIGN_SUBTREE' for d in diagnostics))
 
     def test_visit_limit_exact_boundary_and_reference_reservation(self):
+        # Root + one child = 2 visits; the root is charged, not free. Each visited
+        # node also needs a component reference, so the budget is 3 here.
         exact = TreeAtspi({1: [2]})
-        _, counts, _ = o.collect(exact, 1, 100, o.rect(0, 0, 1, 1), max_visited=2)
+        _, counts, _ = o.collect(exact, 1, 100, o.rect(0, 0, 1, 1), max_visited=3)
         self.assertEqual(counts['nodes'], 2)
         self.assertEqual(counts['truncated'], 0)
         self.assertEqual(exact.child_fetches, [(1, 0)])
 
         off_by_one = TreeAtspi({1: [2]})
-        _, counts, diagnostics = o.collect(off_by_one, 1, 100, o.rect(0, 0, 1, 1), max_visited=1)
+        _, counts, diagnostics = o.collect(off_by_one, 1, 100, o.rect(0, 0, 1, 1), max_visited=2)
         self.assertEqual(counts['nodes'], 1)
         self.assertEqual(counts['truncated'], 1)
-        self.assertEqual(off_by_one.child_fetches, [])
+        # The child reference is acquired, then refused entry to the budget; it
+        # must be counted as truncated rather than silently dropped.
+        self.assertEqual(off_by_one.child_fetches, [(1, 0)])
         self.assertTrue(any(d['code'] == 'NATIVE_AX_VISIT_LIMIT' for d in diagnostics))
 
         limited = TreeAtspi({1: [2]})
@@ -417,6 +458,109 @@ class ObserverTests(unittest.TestCase):
         self.assertFalse(responses[2]['result']['screenCapture']['available'])
         self.assertEqual(responses[3]['error']['code'], 'NATIVE_UNSUPPORTED_OPERATION')
 
+
+class MappingTests(unittest.TestCase):
+    """Honest mapping of what a toolkit announces, with no desktop needed."""
+
+    def test_unmapped_roles_are_preserved(self):
+        self.assertEqual(o.role_of('push button'), 'button')
+        self.assertEqual(o.role_of('page tab'), 'tab')
+        # A toolkit role VLMKit has no vocabulary for stays itself, never dropped.
+        self.assertEqual(o.role_of('date editor'), 'date editor')
+        self.assertEqual(o.role_of(''), 'unknown')
+
+    def test_value_is_a_deterministic_scalar_or_absent(self):
+        self.assertEqual(o.scalar_value(42), '42')
+        self.assertEqual(o.scalar_value('Save'), 'Save')
+        self.assertEqual(o.scalar_value(0.25), '0.25')
+        self.assertIsNone(o.scalar_value(True))
+        self.assertIsNone(o.scalar_value(float('nan')))
+        self.assertIsNone(o.scalar_value({'text': 'x'}))
+
+    def test_entry_text_and_password_are_never_collected(self):
+        a = object.__new__(o.Atspi)
+        a.call = Mock(return_value='hunter2')
+        self.assertIsNone(a.value(1, 'entry'))
+        self.assertIsNone(a.value(1, 'password text'))
+        a.call.assert_not_called()
+        self.assertEqual(a.value(1, 'slider'), 'hunter2')
+
+    def test_value_read_failure_is_absent_not_fatal(self):
+        a = object.__new__(o.Atspi)
+        a.call = Mock(side_effect=o.Failure('NATIVE_AX_CANNOT_COMPLETE', 'no value iface'))
+        self.assertIsNone(a.value(1, 'slider'))
+
+    def test_states_are_restricted_to_the_contract(self):
+        a = object.__new__(o.Atspi)
+        a.obj = Mock(return_value=7)
+
+        def contains(*args, **kwargs):
+            index = args[2][0]
+            # ENABLED, FOCUSED, SELECTED, SHOWING are all present; checked/expanded are not.
+            return 1 if index in (8, 12, 23, 25) else 0
+        a.call = Mock(side_effect=contains)
+        self.assertEqual(a.states(1), {'focused': True, 'selected': True})
+        self.assertFalse(any(k not in o.STATE_KEYS for k in a.states(1)))
+        a.call = Mock(return_value=0)  # nothing set: hidden/disabled are the only inference
+        self.assertEqual(a.states(1), {'hidden': True, 'disabled': True})
+        a.obj = Mock(return_value=None)  # no state set at all: no state is claimed
+        self.assertEqual(a.states(1), {})
+
+    def test_partial_association_is_distinguished_from_an_empty_app(self):
+        window = dict(pid=10, rect=o.rect(0, 0, 10, 10), xid=5)
+        # No AT-SPI window at all: the toolkit has no bridge, not "no app".
+        missing = o.association_failure([], [window])
+        self.assertEqual(missing.code, 'NATIVE_AX_PARTIAL')
+        # AT-SPI sees the window elsewhere: geometry refuses association.
+        elsewhere = o.association_failure([dict(pid=10, rect=o.rect(0, 0, 9, 10))], [window])
+        self.assertEqual(elsewhere.code, 'NATIVE_AX_PARTIAL')
+        self.assertIn('extents', str(elsewhere))
+        # A window of another PID is irrelevant to this association.
+        self.assertEqual(o.associated_pids([dict(pid=11, rect=window['rect'])], [window]), set())
+        # A successful association has no failure to report.
+        self.assertIsNone(o.association_failure([dict(pid=10, rect=window['rect'])], [window]))
+        # And there is nothing to explain when X11 sees no client either.
+        self.assertIsNone(o.association_failure([], []))
+
+    def test_duplicate_identifier_names_both_paths(self):
+        fake = TreeAtspi({1: [2, 3]})
+        nodes, counts, diagnostics = o.collect(fake, 1, 100, o.rect(0, 0, 1, 1))
+        duplicate = [d for d in diagnostics if d['code'] == 'NATIVE_AX_DUPLICATE_IDENTIFIER']
+        self.assertEqual(len(duplicate), 2, 'root and both children share the fake identifier')
+        self.assertEqual(duplicate[1]['paths'], ['button[0]', 'button[0]>button[1]'])
+        self.assertEqual(len(nodes), 3, 'a duplicate identifier never drops a node')
+
+    def test_depth_default_matches_the_public_traversal_bound(self):
+        self.assertEqual(o.collect.__defaults__[0], o.DEFAULT_MAX_DEPTH)
+        self.assertEqual(o.DEFAULT_MAX_DEPTH, 64)
+        self.assertLessEqual(o.DEFAULT_MAX_DEPTH, o.MAX_DEPTH)
+
+    def test_xwayland_extension_is_a_refusal_signal(self):
+        x = object.__new__(o.X11)
+
+        class Query:
+            def __init__(self, present):
+                self.present = present
+            def __call__(self, _atom, opcode, _event, _error):
+                # ctypes.CArgObject hands back a byref(); write through it as Xlib would.
+                opcode._obj.value = 133
+                return 1 if self.present else 0
+
+        calls = []
+        present = [False]
+        def fn(name, *_types):
+            calls.append(name)
+            if name == 'XInternAtom':
+                return lambda *_args: 77
+            if name == 'XQueryExtension':
+                return Query(present=present[0])
+            return lambda *_args: 0  # XSync
+        x.fn = fn
+        x.errors = []
+        self.assertFalse(x.xwayland())
+        present[0] = True
+        self.assertTrue(x.xwayland())
+        self.assertEqual(calls[-2:], ['XQueryExtension', 'XSync'])
 
 if __name__ == '__main__':
     unittest.main()
