@@ -844,3 +844,5 @@ Before writing implementation code:
 6. turn P0-P6 into smaller `issues/open` packets only after those boundaries are verified against current code.
 
 No implementation should begin from this issue until the boundary audit above is complete.
+
+Re-checked against main @ 2ce237f (2026-10-09): the observer slice (P0/P1) is on main; P2-P5 remain open and are in flight on draft PR #2.
