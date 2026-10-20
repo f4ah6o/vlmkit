@@ -22,7 +22,11 @@ const overrides=${JSON.stringify(overrides)};
 createInterface({input:process.stdin}).on('line',line=>{
  const r=JSON.parse(line);
  const defaults={hello:{protocol:1,platform:'linux',backend:'x11',capabilities:{physicalPointer:false,physicalKeyboard:false}},doctor:{accessibility:{available:false},screenCapture:{available:false}}};
- const result=overrides[r.method]??defaults[r.method];
+ // An override of {error:{code,message}} answers ok:false with that code: a test can
+ // hold a protocol error without faking every method the transport calls after it.
+ const override=overrides[r.method];
+ if (override?.error) { console.log(JSON.stringify({id:r.id,ok:false,error:override.error})); return; }
+ const result=override??defaults[r.method];
  console.log(JSON.stringify(result?{id:r.id,ok:true,result}:{id:r.id,ok:false,error:{code:'NATIVE_UNEXPECTED_METHOD',message:r.method}}));
 });`,
   );
