@@ -2,6 +2,8 @@ import AppKit
 
 final class FixtureDelegate: NSObject, NSApplicationDelegate {
     var windows: [NSWindow] = []
+    weak var statusLabel: NSTextField?
+    var saveCount = 0
     func button(_ title: String, _ id: String?, _ frame: NSRect, in view: NSView) -> NSButton {
         let button = NSButton(frame: frame)
         button.title = title
@@ -25,7 +27,14 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let window = makeWindow("VLMKit AX Fixture")
         let view = window.contentView!
-        _ = button("Save", "fixture.save", NSRect(x: 30, y: 390, width: 100, height: 36), in: view)
+        let save = button("Save", "fixture.save", NSRect(x: 30, y: 390, width: 100, height: 36), in: view)
+        save.target = self
+        save.action = #selector(savePressed)
+        let status = NSTextField(labelWithString: "Idle")
+        status.frame = NSRect(x: 440, y: 390, width: 150, height: 36)
+        status.setAccessibilityIdentifier("fixture.status")
+        view.addSubview(status)
+        statusLabel = status
         let unnamed = button("", "fixture.unnamed", NSRect(x: 140, y: 390, width: 16, height: 16), in: view)
         unnamed.setAccessibilityLabel("")
         _ = button("Nearby", "fixture.nearby", NSRect(x: 155, y: 390, width: 80, height: 36), in: view)
@@ -68,6 +77,11 @@ final class FixtureDelegate: NSObject, NSApplicationDelegate {
         } else { window.makeKeyAndOrderFront(nil) }
         NSApp.activate(ignoringOtherApps: true)
     }
+    @objc func savePressed() {
+        saveCount += 1
+        statusLabel?.stringValue = "Saved \(saveCount)"
+    }
+
     @objc func openDialog() {
         let panel = NSPanel(contentRect: NSRect(x: 320, y: 320, width: 300, height: 160),
                             styleMask: [.titled, .closable], backing: .buffered, defer: false)

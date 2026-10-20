@@ -167,6 +167,7 @@ const SPECS: Record<string, Spec> = {
   watch: spec("watch", () => import("../watch.ts")),
   diffPr: spec("diff-pr", () => import("../diff-pr.ts")),
   baseline: spec("baseline-cli", () => import("../baseline-cli.ts")),
+  nativeDoctor: spec("native-doctor", () => import("./commands/native-cli.ts")),
 };
 
 const GROUPS: Record<string, Record<string, { spec?: Spec; run?: (args: string[]) => Promise<void>; desc: string }>> = {
@@ -218,6 +219,9 @@ const GROUPS: Record<string, Record<string, { spec?: Spec; run?: (args: string[]
       spec: SPECS.markupAutofix,
       desc: "Stage-2 auto-fix: LLM turns the verify-markup kickback into gated CSS overrides",
     },
+  },
+  native: {
+    doctor: { spec: SPECS.nativeDoctor, desc: "Diagnose macOS native agent permissions and capabilities" },
   },
 };
 
@@ -393,6 +397,7 @@ Command groups:
   stress                        Exercise responsive and cross-browser variants
   build / contract              Build and validate UI contract artifacts
   verify / heal                 Gate markup and repair actionable failures
+  native                        Diagnose and drive macOS native applications
 
 Workflows:
   snapshot / baseline / watch   Capture and manage visual baselines
