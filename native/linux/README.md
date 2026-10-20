@@ -89,9 +89,10 @@ dbus-run-session -- xvfb-run -a -s '-screen 0 1280x1024x24 -nolisten tcp' \
     --out test-results/native/linux
 ```
 
-Integration dependencies: GTK3/Atk Python GI, `at-spi2-core`, `libatk-adaptor`,
+Integration dependencies: `python3-xlib`, GTK3/Atk Python GI, `at-spi2-core`, `libatk-adaptor`,
 D-Bus, Xvfb, xcompmgr (started before the fixture), and the shared libraries above. The fixture uses only its own local
-windows and produces two profiles, each with a tree, PNG and machine-readable report:
+windows and requires all three profiles below. Base and matrix retain their trees
+and PNGs; `report.json` records the verdicts. Missing Xlib is a failure, never UNRUN:
 
 - **base** (`fixture.py`): real stable IDs, duplicate-title surfaces, ambiguous
   windows refused without an explicit selector, client-local semantic rectangles
@@ -106,6 +107,17 @@ windows and produces two profiles, each with a tree, PNG and machine-readable re
   a disabled button and an image. Every identifier's announced role, name, states
   and native action names are asserted, and the entry/password text must not
   appear anywhere in the artifact.
+
+- **partial-association**: a plain Xlib client publishes `_NET_WM_PID`; an
+  independent X11 query verifies its owner and visible geometry. With no AT-SPI
+  bridge, both `window.list` and `window.select` must return `NATIVE_AX_PARTIAL`,
+  with counts of one X11 window, zero AT-SPI windows and zero AT-SPI apps.
+  `partial.json` retains the actual windows, responses and protocol history;
+  no normal empty tree is accepted. Closing the session leaves the client alive.
+
+The CI artifact includes `SHA256SUMS` over all evidence including the live
+TypeScript verdict, excluding the checksum manifest itself. Unsupported Wayland,
+XWayland, physical input and real GPUI/MZed applications remain unverified.
 
 The fixture import smoke (`test_fixture.py`) builds both fixtures in a child
 process without entering `Gtk.main()`, so a fixture that stops building fails the
